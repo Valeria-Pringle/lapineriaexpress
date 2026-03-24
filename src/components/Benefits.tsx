@@ -16,7 +16,7 @@ const benefits = [
   {
     title: "Envíos a toda la república",
     description:
-      "Envíos seguros a cualquier parte de México. Tu pedido llega bien empacado.",
+      "Envíos seguros a cualquier parte de México. Tu pedido llega seguro y bien empacado.",
     icon: "🇲🇽",
   },
   {
@@ -41,15 +41,15 @@ export function Benefits() {
           {benefits.map((item, index) => (
             <Reveal key={item.title} delayMs={index * 75}>
               <div className="rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm transition-shadow hover:shadow-md flex flex-col justify-between h-full">
-              <div className="flex items-center gap-2 justify-between">
-                <h3 className="text-lg font-semibold text-foreground">
-                  {item.title}
-                </h3>
-                <span className="block text-3xl" aria-hidden>
-                  {item.icon}
-                </span>
-              </div>
-              <p className="text-muted">{item.description}</p>
+                <div className="flex items-center gap-2 justify-between">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {item.title}
+                  </h3>
+                  <span className="block text-3xl" aria-hidden>
+                    {item.icon}
+                  </span>
+                </div>
+                <p className="text-muted">{item.description}</p>
               </div>
             </Reveal>
           ))}
