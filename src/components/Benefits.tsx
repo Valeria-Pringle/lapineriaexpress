@@ -10,7 +10,7 @@ const benefits = [
   {
     title: "Pedidos chicos y grandes",
     description:
-      "Desde unos cuantos para un evento hasta miles para campaña. Misma calidad.",
+      "Desde unos cuantos hasta campañas. Misma calidad.",
     icon: "📦",
   },
   {
