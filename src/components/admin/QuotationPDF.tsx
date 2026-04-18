@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { QuotationItem, ClientData } from "./AdminPanel";
-import { PRODUCTS } from "@/lib/products";
+import { PRODUCTS, getPriceForQuantity } from "@/lib/products";
 import { imageToBase64 } from "@/lib/imageUtils";
 
 export async function generateQuotationPDF(
@@ -152,7 +152,7 @@ export async function generateQuotationPDF(
       const product = PRODUCTS.find((p) => p.id === item.productId);
       if (!product) return;
       productName = product.name;
-      price = product.price;
+      price = getPriceForQuantity(product, item.quantity);
     }
 
     const itemTotal = price * item.quantity;

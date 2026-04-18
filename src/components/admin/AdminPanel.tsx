@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { PRODUCTS } from "@/lib/products";
+import { PRODUCTS, getPriceForQuantity } from "@/lib/products";
 import { generateQuotationPDF } from "./QuotationPDF";
 
 export interface ClientData {
@@ -88,7 +88,9 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
         return total + item.customPrice * item.quantity;
       }
       const product = PRODUCTS.find((p) => p.id === item.productId);
-      return total + (product?.price || 0) * item.quantity;
+      if (!product) return total;
+      const price = getPriceForQuantity(product, item.quantity);
+      return total + price * item.quantity;
     }, 0);
     return itemsTotal + shippingCost;
   };
@@ -205,7 +207,7 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">
-                      Tipo de Botón
+                      Tipo de Pin
                     </label>
                     <select
                       value={selectedProductId}
@@ -214,7 +216,7 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
                     >
                       {PRODUCTS.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} - ${product.price.toFixed(2)}
+                          {product.name}
                         </option>
                       ))}
                     </select>
@@ -339,7 +341,7 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
                             );
                             if (!product) return null;
                             productName = product.name;
-                            price = product.price;
+                            price = getPriceForQuantity(product, item.quantity);
                           }
 
                           const itemTotal = price * item.quantity;
