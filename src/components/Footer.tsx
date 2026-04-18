@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 const socials = [
   {
     name: "Facebook",
@@ -36,13 +38,22 @@ export function Footer() {
     >
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-col items-center justify-between gap-8 sm:flex-row">
-          <div>
-            <p className="text-xl font-semibold text-foreground">
-              La Pineria Express
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              Pins personalizados · Ensenada, Baja California
-            </p>
+          <div className="flex items-center gap-4">
+            <Image
+              src="/logo.jpg"
+              alt="La Pineria Express Logo"
+              width={64}
+              height={64}
+              className="rounded-lg object-cover"
+            />
+            <div>
+              <p className="text-xl font-semibold text-foreground">
+                La Pineria Express
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                Pins personalizados · Ensenada, Baja California
+              </p>
+            </div>
           </div>
           <div className="flex gap-6">
             {socials.map((social) => (
