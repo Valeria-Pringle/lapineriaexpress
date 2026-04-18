@@ -7,7 +7,8 @@ export async function generateQuotationPDF(
   items: QuotationItem[],
   clientData: ClientData,
   notes: string = "",
-  shippingCost: number = 0
+  shippingCost: number = 0,
+  includeIVA: boolean = false
 ): Promise<void> {
   const doc = new jsPDF({
     orientation: "portrait",
@@ -196,8 +197,20 @@ export async function generateQuotationPDF(
     yPosition += 6;
   }
 
+  let ivaAmount = 0;
+  let total = subtotal + shippingCost;
+
+  if (includeIVA) {
+    ivaAmount = (subtotal + shippingCost) * 0.16;
+    total = (subtotal + shippingCost) * 1.16;
+    doc.text("IVA (16%):", col3 - 5, yPosition);
+    doc.text(`$${ivaAmount.toFixed(2)}`, pageWidth - margin - 5, yPosition, {
+      align: "right",
+    });
+    yPosition += 6;
+  }
+
   // ===== TOTAL =====
-  const total = subtotal + shippingCost;
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(76, 211, 214);

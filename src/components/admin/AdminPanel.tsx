@@ -31,6 +31,7 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
   const [shippingCost, setShippingCost] = useState(0);
   const [customItemName, setCustomItemName] = useState("");
   const [customItemPrice, setCustomItemPrice] = useState(0);
+  const [includeIVA, setIncludeIVA] = useState(false);
   const [clientData, setClientData] = useState<ClientData>({
     name: "",
     email: "",
@@ -82,7 +83,7 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
     );
   };
 
-  const calculateTotal = () => {
+  const calculateSubtotal = () => {
     const itemsTotal = items.reduce((total, item) => {
       if (item.customPrice !== undefined) {
         return total + item.customPrice * item.quantity;
@@ -95,12 +96,25 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
     return itemsTotal + shippingCost;
   };
 
+  const calculateTotal = () => {
+    const subtotal = calculateSubtotal();
+    if (includeIVA) {
+      return subtotal * 1.16;
+    }
+    return subtotal;
+  };
+
+  const calculateIVA = () => {
+    if (!includeIVA) return 0;
+    return calculateSubtotal() * 0.16;
+  };
+
   const handleGeneratePDF = async () => {
     if (items.length === 0) {
       alert("Agrega al menos un producto antes de generar la cotización");
       return;
     }
-    await generateQuotationPDF(items, clientData, notes, shippingCost);
+    await generateQuotationPDF(items, clientData, notes, shippingCost, includeIVA);
   };
 
   const total = calculateTotal();
@@ -386,10 +400,26 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
 
                   {/* Total */}
                   <div className="pt-4 border-t-2 border-gray-200 bg-teal-50 p-4 rounded-lg">
-                    <div className="flex justify-end items-center gap-4">
+                    <div className="space-y-2 mb-3">
+                      <div className="flex justify-end items-center gap-4">
+                        <span className="text-sm font-medium">Subtotal:</span>
+                        <span className="text-lg font-bold text-gray-700">
+                          ${calculateSubtotal().toFixed(2)}
+                        </span>
+                      </div>
+                      {includeIVA && (
+                        <div className="flex justify-end items-center gap-4">
+                          <span className="text-sm font-medium">IVA (16%):</span>
+                          <span className="text-lg font-bold text-gray-700">
+                            ${calculateIVA().toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-end items-center gap-4 border-t pt-2">
                       <span className="text-lg font-bold">Total:</span>
                       <span className="text-3xl font-bold text-teal-600">
-                        ${total.toFixed(2)}
+                        ${calculateTotal().toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -432,6 +462,23 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
               />
               <p className="text-xs text-gray-500 mt-1">
                 Este costo se sumará al total de la cotización
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeIVA}
+                  onChange={(e) => setIncludeIVA(e.target.checked)}
+                  className="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-2 focus:ring-teal-500"
+                />
+                <span className="text-sm font-medium">
+                  Agregar IVA al 16%
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-2 ml-7">
+                Se agregará el 16% de IVA al subtotal de la cotización
               </p>
             </div>
 
