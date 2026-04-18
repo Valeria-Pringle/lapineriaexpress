@@ -27,7 +27,7 @@ export const PRODUCTS: Product[] = [
   },
   {
     id: "pins-5.5cm",
-    name: "Pins 5.5cm",
+    name: "Pin 5.5cm",
     description: "Pins personalizados de 5.5cm",
     priceTiers: [
       { minQuantity: 6, maxQuantity: 11, pricePerUnit: 20 },
