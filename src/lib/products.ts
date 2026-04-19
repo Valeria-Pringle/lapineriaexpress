@@ -52,7 +52,7 @@ export const PRODUCTS: Product[] = [
 ];
 
 export function getPriceForQuantity(product: Product, quantity: number): number {
-  if (!product.priceTiers) {
+  if (!product.priceTiers || product.priceTiers.length === 0) {
     return product.price || 0;
   }
 
@@ -62,5 +62,15 @@ export function getPriceForQuantity(product: Product, quantity: number): number 
       (!tier.maxQuantity || quantity <= tier.maxQuantity)
   );
 
-  return tier?.pricePerUnit || 0;
+  if (tier) {
+    return tier.pricePerUnit;
+  }
+
+  // Si la cantidad es menor al primer rango definido, usamos el precio del primer tramo.
+  // Esto evita devolver 0 para cantidades de 1 a 5 cuando el catálogo solo define precios desde 6 en adelante.
+  if (quantity > 0) {
+    return product.priceTiers[0].pricePerUnit;
+  }
+
+  return 0;
 }
