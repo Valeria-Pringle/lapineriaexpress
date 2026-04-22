@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { PRODUCTS, getPriceForQuantity } from "@/lib/products";
 import { generateQuotationPDF } from "./QuotationPDF";
 
@@ -19,11 +18,7 @@ export interface QuotationItem {
   customPrice?: number;
 }
 
-interface AdminPanelProps {
-  onLogout: () => void;
-}
-
-export function AdminPanel({ onLogout }: AdminPanelProps) {
+export function AdminPanel() {
   const [items, setItems] = useState<QuotationItem[]>([]);
   const [selectedProductId, setSelectedProductId] = useState(PRODUCTS[0].id);
   const [quantity, setQuantity] = useState(1);
@@ -117,36 +112,8 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
     await generateQuotationPDF(items, clientData, notes, shippingCost, includeIVA);
   };
 
-  const total = calculateTotal();
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <Image
-              src="/logo.jpg"
-              alt="La Pineria Express Logo"
-              width={40}
-              height={40}
-              className="rounded-lg object-cover"
-            />
-            <div>
-              <h1 className="text-2xl font-bold">La Pineria Express</h1>
-              <p className="text-gray-600 text-sm">Panel Administrativo</p>
-            </div>
-          </div>
-          <button
-            onClick={onLogout}
-            className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-2 md:px-4 py-2 md:py-4">
         {/* Título de sección */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Generador de Cotizaciones</h2>
@@ -490,7 +457,6 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
             </button>
           </div>
         )}
-      </main>
     </div>
   );
 }
