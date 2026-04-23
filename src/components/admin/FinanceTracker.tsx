@@ -6,6 +6,11 @@ import {
   type FinanceRepository,
 } from "@/lib/finance/storage";
 import {
+  financePreferencesRepository,
+  type FinancePreferences,
+  type FinancePreferencesRepository,
+} from "@/lib/finance/preferences";
+import {
   type FinanceMovement,
   type MovementFilters,
   type MovementInput,
@@ -14,6 +19,7 @@ import {
 
 interface FinanceTrackerProps {
   repository?: FinanceRepository;
+  preferencesRepository?: FinancePreferencesRepository;
 }
 
 const defaultForm: MovementInput = {
@@ -63,23 +69,32 @@ function buildSummary(movements: FinanceMovement[]): MovementSummary {
   };
 }
 
-export function FinanceTracker({ repository = financeRepository }: FinanceTrackerProps) {
+export function FinanceTracker({
+  repository = financeRepository,
+  preferencesRepository = financePreferencesRepository,
+}: FinanceTrackerProps) {
   const [movements, setMovements] = useState<FinanceMovement[]>(() =>
     repository.getAll()
+  );
+  const [preferences] = useState<FinancePreferences>(() =>
+    preferencesRepository.get()
   );
   const [form, setForm] = useState<MovementInput>(defaultForm);
   const [filters, setFilters] = useState<MovementFilters>(defaultFilters);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const categories = useMemo(
-    () => Array.from(new Set(movements.map((movement) => movement.category))).sort(),
-    [movements]
-  );
-  const accounts = useMemo(
-    () => Array.from(new Set(movements.map((movement) => movement.account))).sort(),
-    [movements]
-  );
+  const categories = useMemo(() => {
+    return Array.from(
+      new Set([...preferences.categories, ...movements.map((movement) => movement.category)])
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [preferences.categories, movements]);
+
+  const accounts = useMemo(() => {
+    return Array.from(
+      new Set([...preferences.accounts, ...movements.map((movement) => movement.account)])
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [preferences.accounts, movements]);
 
   const filteredMovements = useMemo(() => {
     return movements.filter((movement) => {
@@ -187,32 +202,28 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-3">
-        <article className="rounded-xl bg-white border border-gray-200 p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Ingresos</p>
+        <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-muted">Ingresos</p>
           <p className="text-2xl font-bold text-emerald-600 mt-2">
             {formatCurrency(summary.totalIncome)}
           </p>
         </article>
-        <article className="rounded-xl bg-white border border-gray-200 p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Egresos</p>
+        <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-muted">Egresos</p>
           <p className="text-2xl font-bold text-rose-600 mt-2">
             {formatCurrency(summary.totalExpense)}
           </p>
         </article>
-        <article className="rounded-xl bg-white border border-gray-200 p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Balance</p>
-          <p
-            className={`text-2xl font-bold mt-2 ${
-              summary.balance >= 0 ? "text-teal-700" : "text-red-700"
-            }`}
-          >
+        <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-muted">Balance</p>
+          <p className="text-2xl font-bold mt-2 text-foreground">
             {formatCurrency(summary.balance)}
           </p>
         </article>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-5">
-        <div className="xl:col-span-2 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <div className="xl:col-span-2 bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm">
           <h3 className="text-lg font-semibold mb-4">
             {editingId ? "Editar movimiento" : "Nuevo movimiento"}
           </h3>
@@ -225,7 +236,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, type: event.target.value as "ingreso" | "egreso" }))
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="ingreso">Ingreso</option>
                 <option value="egreso">Egreso</option>
@@ -245,7 +256,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                     amount: Number.parseFloat(event.target.value) || 0,
                   }))
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="0.00"
               />
             </div>
@@ -258,7 +269,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, name: event.target.value }))
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Descripcion corta"
               />
             </div>
@@ -271,7 +282,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                   setForm((prev) => ({ ...prev, comments: event.target.value }))
                 }
                 rows={3}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Opcional"
               />
             </div>
@@ -284,34 +295,44 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, date: event.target.value }))
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-1">Categoria</label>
-              <input
-                type="text"
+              <select
                 value={form.category}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, category: event.target.value }))
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                placeholder="Comida, transporte, salario..."
-              />
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Selecciona categoria</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium mb-1">Cuenta</label>
-              <input
-                type="text"
+              <select
                 value={form.account}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, account: event.target.value }))
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2"
-                placeholder="Efectivo, banco, tarjeta..."
-              />
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Selecciona cuenta</option>
+                {accounts.map((account) => (
+                  <option key={account} value={account}>
+                    {account}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {error && (
@@ -323,7 +344,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
             <div className="flex gap-2 pt-1">
               <button
                 type="submit"
-                className="flex-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2"
+                className="flex-1 rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2"
               >
                 {editingId ? "Guardar cambios" : "Guardar movimiento"}
               </button>
@@ -331,7 +352,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium"
+                  className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-background"
                 >
                   Cancelar
                 </button>
@@ -340,9 +361,9 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
           </form>
         </div>
 
-        <div className="xl:col-span-3 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+        <div className="xl:col-span-3 bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm">
           <h3 className="text-lg font-semibold">Movimientos</h3>
-          <p className="text-sm text-gray-500 mt-1 mb-4">
+          <p className="text-sm text-muted mt-1 mb-4">
             Ordenados por fecha, del mas reciente al mas antiguo.
           </p>
 
@@ -355,7 +376,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                   type: event.target.value as MovementFilters["type"],
                 }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="todos">Todos los tipos</option>
               <option value="ingreso">Solo ingresos</option>
@@ -367,7 +388,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, category: event.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las categorias</option>
               {categories.map((category) => (
@@ -382,7 +403,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, account: event.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las cuentas</option>
               {accounts.map((account) => (
@@ -398,7 +419,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, startDate: event.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
 
             <input
@@ -407,14 +428,14 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
               onChange={(event) =>
                 setFilters((prev) => ({ ...prev, endDate: event.target.value }))
               }
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left border-b border-gray-200">
+                <tr className="text-left border-b border-zinc-200/80">
                   <th className="py-2 pr-3">Fecha</th>
                   <th className="py-2 pr-3">Tipo</th>
                   <th className="py-2 pr-3">Nombre</th>
@@ -427,14 +448,14 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
               <tbody>
                 {filteredMovements.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-gray-500">
+                    <td colSpan={7} className="py-6 text-center text-muted">
                       No hay movimientos para los filtros seleccionados.
                     </td>
                   </tr>
                 )}
 
                 {filteredMovements.map((movement) => (
-                  <tr key={movement.id} className="border-b border-gray-100 align-top">
+                  <tr key={movement.id} className="border-b border-zinc-100 align-top">
                     <td className="py-3 pr-3 whitespace-nowrap">{movement.date}</td>
                     <td className="py-3 pr-3">
                       <span
@@ -448,9 +469,9 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                       </span>
                     </td>
                     <td className="py-3 pr-3">
-                      <p className="font-medium text-gray-900">{movement.name}</p>
+                      <p className="font-medium text-foreground">{movement.name}</p>
                       {movement.comments && (
-                        <p className="text-xs text-gray-500 mt-1 max-w-sm">
+                        <p className="text-xs text-muted mt-1 max-w-sm">
                           {movement.comments}
                         </p>
                       )}
@@ -470,7 +491,7 @@ export function FinanceTracker({ repository = financeRepository }: FinanceTracke
                         <button
                           type="button"
                           onClick={() => handleEdit(movement)}
-                          className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+                          className="rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-background"
                         >
                           Editar
                         </button>

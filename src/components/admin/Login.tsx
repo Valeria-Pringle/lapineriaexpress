@@ -28,7 +28,7 @@ export function Login({ onLogin }: LoginProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-white">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <div className="flex justify-center mb-6">
@@ -44,7 +44,7 @@ export function Login({ onLogin }: LoginProps) {
           <h1 className="text-3xl font-bold text-center mb-2">
             La Pineria Express
           </h1>
-          <p className="text-center text-gray-600 mb-8">Panel Administrativo</p>
+          <p className="text-center text-muted mb-8">Panel Administrativo</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -56,7 +56,7 @@ export function Login({ onLogin }: LoginProps) {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="admin"
               />
             </div>
@@ -70,7 +70,7 @@ export function Login({ onLogin }: LoginProps) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="••••••••"
               />
             </div>
@@ -83,7 +83,7 @@ export function Login({ onLogin }: LoginProps) {
 
             <button
               type="submit"
-              className="w-full bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition"
+              className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg transition"
             >
               Iniciar sesión
             </button>
