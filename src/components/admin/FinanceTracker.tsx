@@ -22,6 +22,8 @@ interface FinanceTrackerProps {
   preferencesRepository?: FinancePreferencesRepository;
 }
 
+const PAGE_SIZE = 10;
+
 const defaultForm: MovementInput = {
   type: "ingreso",
   amount: 0,
@@ -69,10 +71,37 @@ function buildSummary(movements: FinanceMovement[]): MovementSummary {
   };
 }
 
+function getMonthKeyFromDate(dateString: string): string {
+  const date = new Date(dateString);
+  if (!Number.isFinite(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function getCurrentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split("-");
+  if (!year || !month) return monthKey;
+
+  const date = new Date(`${year}-${month}-01T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return monthKey;
+
+  return new Intl.DateTimeFormat("es-MX", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
 export function FinanceTracker({
   repository = financeRepository,
   preferencesRepository = financePreferencesRepository,
 }: FinanceTrackerProps) {
+  const currentMonthKey = getCurrentMonthKey();
   const [movements, setMovements] = useState<FinanceMovement[]>(() =>
     repository.getAll()
   );
@@ -83,6 +112,7 @@ export function FinanceTracker({
   const [filters, setFilters] = useState<MovementFilters>(defaultFilters);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const categories = useMemo(() => {
     const preferenceNames = preferences.categories.map((category) => category.name);
@@ -106,8 +136,14 @@ export function FinanceTracker({
     ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
   }, [preferences.accounts, movements]);
 
+  const currentMonthMovements = useMemo(() => {
+    return movements.filter(
+      (movement) => getMonthKeyFromDate(movement.date) === currentMonthKey
+    );
+  }, [movements, currentMonthKey]);
+
   const filteredMovements = useMemo(() => {
-    return movements.filter((movement) => {
+    return currentMonthMovements.filter((movement) => {
       const byType =
         filters.type === "todos" ? true : movement.type === filters.type;
       const byCategory = filters.category
@@ -128,10 +164,21 @@ export function FinanceTracker({
       const byDateRange = movementDate >= startDate && movementDate <= endDate;
 
       return byType && byCategory && byAccount && byDateRange;
+    }).sort((a, b) => {
+      const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [movements, filters]);
+  }, [currentMonthMovements, filters]);
 
   const summary = useMemo(() => buildSummary(filteredMovements), [filteredMovements]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredMovements.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedMovements = useMemo(() => {
+    const start = (safeCurrentPage - 1) * PAGE_SIZE;
+    return filteredMovements.slice(start, start + PAGE_SIZE);
+  }, [filteredMovements, safeCurrentPage]);
 
   const resetForm = () => {
     setForm(defaultForm);
@@ -178,6 +225,7 @@ export function FinanceTracker({
     }
 
     refreshMovements();
+    setCurrentPage(1);
     resetForm();
   };
 
@@ -203,6 +251,7 @@ export function FinanceTracker({
 
     repository.remove(id);
     refreshMovements();
+    setCurrentPage(1);
 
     if (editingId === id) {
       resetForm();
@@ -211,21 +260,27 @@ export function FinanceTracker({
 
   return (
     <div className="space-y-6">
+      <section className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-sm">
+        <p className="text-sm text-muted">
+          Mostrando movimientos del mes actual: <span className="font-semibold text-foreground">{formatMonthLabel(currentMonthKey)}</span>
+        </p>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-3">
         <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-muted">Ingresos</p>
+          <p className="text-xs uppercase tracking-wide text-muted">Ingresos (mes actual)</p>
           <p className="text-2xl font-bold text-emerald-600 mt-2">
             {formatCurrency(summary.totalIncome)}
           </p>
         </article>
         <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-muted">Egresos</p>
+          <p className="text-xs uppercase tracking-wide text-muted">Egresos (mes actual)</p>
           <p className="text-2xl font-bold text-rose-600 mt-2">
             {formatCurrency(summary.totalExpense)}
           </p>
         </article>
         <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
-          <p className="text-xs uppercase tracking-wide text-muted">Balance</p>
+          <p className="text-xs uppercase tracking-wide text-muted">Balance (mes actual)</p>
           <p className="text-2xl font-bold mt-2 text-foreground">
             {formatCurrency(summary.balance)}
           </p>
@@ -371,21 +426,22 @@ export function FinanceTracker({
           </form>
         </div>
 
-        <div className="xl:col-span-3 bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm">
+        <div className="xl:col-span-3 bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm flex flex-col min-h-[680px]">
           <h3 className="text-lg font-semibold">Movimientos</h3>
           <p className="text-sm text-muted mt-1 mb-4">
-            Ordenados por fecha, del mas reciente al mas antiguo.
+            Mes actual. Ordenados por fecha, del mas reciente al mas antiguo.
           </p>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5 mb-4">
             <select
               value={filters.type}
-              onChange={(event) =>
+              onChange={(event) => {
                 setFilters((prev) => ({
                   ...prev,
                   type: event.target.value as MovementFilters["type"],
-                }))
-              }
+                }));
+                setCurrentPage(1);
+              }}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="todos">Todos los tipos</option>
@@ -395,9 +451,10 @@ export function FinanceTracker({
 
             <select
               value={filters.category}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, category: event.target.value }))
-              }
+              onChange={(event) => {
+                setFilters((prev) => ({ ...prev, category: event.target.value }));
+                setCurrentPage(1);
+              }}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las categorias</option>
@@ -410,9 +467,10 @@ export function FinanceTracker({
 
             <select
               value={filters.account}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, account: event.target.value }))
-              }
+              onChange={(event) => {
+                setFilters((prev) => ({ ...prev, account: event.target.value }));
+                setCurrentPage(1);
+              }}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">Todas las cuentas</option>
@@ -426,24 +484,27 @@ export function FinanceTracker({
             <input
               type="date"
               value={filters.startDate}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, startDate: event.target.value }))
-              }
+              onChange={(event) => {
+                setFilters((prev) => ({ ...prev, startDate: event.target.value }));
+                setCurrentPage(1);
+              }}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
 
             <input
               type="date"
               value={filters.endDate}
-              onChange={(event) =>
-                setFilters((prev) => ({ ...prev, endDate: event.target.value }))
-              }
+              onChange={(event) => {
+                setFilters((prev) => ({ ...prev, endDate: event.target.value }));
+                setCurrentPage(1);
+              }}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-auto">
+              <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-zinc-200/80">
                   <th className="py-2 pr-3">Fecha</th>
@@ -464,7 +525,7 @@ export function FinanceTracker({
                   </tr>
                 )}
 
-                {filteredMovements.map((movement) => (
+                {paginatedMovements.map((movement) => (
                   <tr key={movement.id} className="border-b border-zinc-100 align-top">
                     <td className="py-3 pr-3 whitespace-nowrap">{movement.date}</td>
                     <td className="py-3 pr-3">
@@ -533,6 +594,41 @@ export function FinanceTracker({
                 ))}
               </tbody>
             </table>
+            </div>
+
+            <div className="mt-auto shrink-0 pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3 bg-white">
+              <p className="text-xs text-muted">
+                {filteredMovements.length === 0
+                  ? "Sin resultados"
+                  : `Mostrando ${(safeCurrentPage - 1) * PAGE_SIZE + 1}-${Math.min(
+                      safeCurrentPage * PAGE_SIZE,
+                      filteredMovements.length
+                    )} de ${filteredMovements.length}`}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={safeCurrentPage === 1}
+                  className="rounded-md border border-zinc-300 px-3 py-1 text-xs disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <span className="text-xs text-muted">
+                  Pagina {safeCurrentPage} de {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                  }
+                  disabled={safeCurrentPage === totalPages}
+                  className="rounded-md border border-zinc-300 px-3 py-1 text-xs disabled:opacity-50"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>

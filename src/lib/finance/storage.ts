@@ -23,9 +23,9 @@ function safeParse(value: string | null): FinanceMovement[] {
 
 function sortByRecentDate(movements: FinanceMovement[]): FinanceMovement[] {
   return [...movements].sort((a, b) => {
-    const aTime = new Date(a.date).getTime();
-    const bTime = new Date(b.date).getTime();
-    return bTime - aTime;
+    const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 }
 

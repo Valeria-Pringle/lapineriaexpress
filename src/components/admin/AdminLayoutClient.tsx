@@ -14,6 +14,10 @@ const mainNavigationItems = [
   { href: "/admin/finanzas", label: "Finanzas" },
 ];
 
+const financeSubNavigationItems = [
+  { href: "/admin/finanzas/historico", label: "Historico" },
+];
+
 const preferencesNavigationItem = {
   href: "/admin/preferencias",
   label: "Preferencias",
@@ -41,6 +45,7 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
   const pageTitleByPath: Record<string, string> = {
     "/admin/cotizaciones": "Cotizaciones",
     "/admin/finanzas": "Finanzas",
+    "/admin/finanzas/historico": "Finanzas / Historico",
     "/admin/preferencias": "Preferencias",
   };
 
@@ -92,29 +97,56 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
           {/* Nav */}
           <nav className="flex-1 p-2 space-y-1">
             {mainNavigationItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isFinanceSection = item.href === "/admin/finanzas";
+              const isActive = isFinanceSection
+                ? pathname.startsWith("/admin/finanzas")
+                : pathname === item.href;
+
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={isSidebarOpen ? undefined : item.label}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap overflow-hidden ${
-                    isActive
-                      ? "bg-primary text-white"
-                      : "text-muted hover:bg-background hover:text-foreground"
-                  }`}
-                >
-                  <span className="shrink-0 w-5 text-center font-bold">
-                    {item.label.charAt(0)}
-                  </span>
-                  <span
-                    className={`transition-all duration-300 overflow-hidden ${
-                      isSidebarOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0"
+                <div key={item.href} className="space-y-1">
+                  <Link
+                    href={item.href}
+                    title={isSidebarOpen ? undefined : item.label}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap overflow-hidden ${
+                      isActive
+                        ? "bg-primary text-white"
+                        : "text-muted hover:bg-background hover:text-foreground"
                     }`}
                   >
-                    {item.label}
-                  </span>
-                </Link>
+                    <span className="shrink-0 w-5 text-center font-bold">
+                      {item.label.charAt(0)}
+                    </span>
+                    <span
+                      className={`transition-all duration-300 overflow-hidden ${
+                        isSidebarOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0"
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+
+                  {isFinanceSection && isSidebarOpen && pathname.startsWith("/admin/finanzas") && (
+                    <div className="pl-4 pr-1 space-y-1">
+                      {financeSubNavigationItems.map((subItem) => {
+                        const isSubActive = pathname === subItem.href;
+
+                        return (
+                          <Link
+                            key={subItem.href}
+                            href={subItem.href}
+                            className={`flex items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                              isSubActive
+                                ? "bg-cyan-100 text-cyan-900"
+                                : "text-muted hover:bg-background hover:text-foreground"
+                            }`}
+                          >
+                            {subItem.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>
