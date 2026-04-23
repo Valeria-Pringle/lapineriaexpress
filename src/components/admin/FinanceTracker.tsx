@@ -110,6 +110,7 @@ export function FinanceTracker({
   );
   const [form, setForm] = useState<MovementInput>(defaultForm);
   const [filters, setFilters] = useState<MovementFilters>(defaultFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -260,11 +261,7 @@ export function FinanceTracker({
 
   return (
     <div className="space-y-6">
-      <section className="bg-white border border-zinc-200/80 rounded-xl p-4 shadow-sm">
-        <p className="text-sm text-muted">
-          Mostrando movimientos del mes actual: <span className="font-semibold text-foreground">{formatMonthLabel(currentMonthKey)}</span>
-        </p>
-      </section>
+
 
       <section className="grid gap-4 md:grid-cols-3">
         <article className="rounded-xl bg-white border border-zinc-200/80 p-4 shadow-sm">
@@ -288,12 +285,12 @@ export function FinanceTracker({
       </section>
 
       <section className="grid gap-6 xl:grid-cols-5">
-        <div className="xl:col-span-2 bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm">
+        <div className="xl:col-span-2 bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm flex flex-col min-h-[680px]">
           <h3 className="text-lg font-semibold mb-4">
             {editingId ? "Editar movimiento" : "Nuevo movimiento"}
           </h3>
 
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Tipo</label>
               <select
@@ -406,7 +403,7 @@ export function FinanceTracker({
               </p>
             )}
 
-            <div className="flex gap-2 pt-1">
+            <div className="flex gap-2 pt-1 mt-auto">
               <button
                 type="submit"
                 className="flex-1 rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2"
@@ -432,74 +429,128 @@ export function FinanceTracker({
             Mes actual. Ordenados por fecha, del mas reciente al mas antiguo.
           </p>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5 mb-4">
-            <select
-              value={filters.type}
-              onChange={(event) => {
-                setFilters((prev) => ({
-                  ...prev,
-                  type: event.target.value as MovementFilters["type"],
-                }));
-                setCurrentPage(1);
-              }}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          <div className="mb-4 rounded-xl border border-zinc-200/80 bg-background">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left"
             >
-              <option value="todos">Todos los tipos</option>
-              <option value="ingreso">Solo ingresos</option>
-              <option value="egreso">Solo egresos</option>
-            </select>
+              <span className="flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Filtros</p>
+                {(filters.type !== "todos" || filters.category || filters.account || filters.startDate || filters.endDate) && (
+                  <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                    Activos
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-3">
+                {(filters.type !== "todos" || filters.category || filters.account || filters.startDate || filters.endDate) && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); setFilters(defaultFilters); setCurrentPage(1); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setFilters(defaultFilters); setCurrentPage(1); } }}
+                    className="text-xs text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Limpiar
+                  </span>
+                )}
+                <svg
+                  className={`h-4 w-4 text-muted transition-transform duration-200 ${filtersOpen ? "rotate-180" : ""}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                >
+                  <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </button>
+            {filtersOpen && (
+            <div className="px-4 pb-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted">Tipo de movimiento</label>
+                <select
+                  value={filters.type}
+                  onChange={(event) => {
+                    setFilters((prev) => ({
+                      ...prev,
+                      type: event.target.value as MovementFilters["type"],
+                    }));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="todos">Todos los tipos</option>
+                  <option value="ingreso">Solo ingresos</option>
+                  <option value="egreso">Solo egresos</option>
+                </select>
+              </div>
 
-            <select
-              value={filters.category}
-              onChange={(event) => {
-                setFilters((prev) => ({ ...prev, category: event.target.value }));
-                setCurrentPage(1);
-              }}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Todas las categorias</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted">Categoría</label>
+                <select
+                  value={filters.category}
+                  onChange={(event) => {
+                    setFilters((prev) => ({ ...prev, category: event.target.value }));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todas las categorías</option>
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <select
-              value={filters.account}
-              onChange={(event) => {
-                setFilters((prev) => ({ ...prev, account: event.target.value }));
-                setCurrentPage(1);
-              }}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Todas las cuentas</option>
-              {accounts.map((account) => (
-                <option key={account} value={account}>
-                  {account}
-                </option>
-              ))}
-            </select>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted">Cuenta</label>
+                <select
+                  value={filters.account}
+                  onChange={(event) => {
+                    setFilters((prev) => ({ ...prev, account: event.target.value }));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todas las cuentas</option>
+                  {accounts.map((account) => (
+                    <option key={account} value={account}>
+                      {account}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <input
-              type="date"
-              value={filters.startDate}
-              onChange={(event) => {
-                setFilters((prev) => ({ ...prev, startDate: event.target.value }));
-                setCurrentPage(1);
-              }}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted">Fecha desde</label>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(event) => {
+                    setFilters((prev) => ({ ...prev, startDate: event.target.value }));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
 
-            <input
-              type="date"
-              value={filters.endDate}
-              onChange={(event) => {
-                setFilters((prev) => ({ ...prev, endDate: event.target.value }));
-                setCurrentPage(1);
-              }}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted">Fecha hasta</label>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(event) => {
+                    setFilters((prev) => ({ ...prev, endDate: event.target.value }));
+                    setCurrentPage(1);
+                  }}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+            </div>
+            )}
           </div>
 
           <div className="flex flex-col flex-1 min-h-0">
