@@ -1,21 +1,57 @@
+export interface CategoryPreference {
+  name: string;
+  color: string;
+}
+
 export interface FinancePreferences {
-  categories: string[];
+  categories: CategoryPreference[];
   accounts: string[];
 }
 
 const STORAGE_KEY = "admin-finance-preferences";
 
 const defaultPreferences: FinancePreferences = {
-  categories: ["Comida", "Transporte", "Salario"],
+  categories: [
+    { name: "Comida", color: "#f59e0b" },
+    { name: "Transporte", color: "#3b82f6" },
+    { name: "Salario", color: "#10b981" },
+  ],
   accounts: ["Efectivo", "Banco", "Tarjeta"],
 };
 
 export interface FinancePreferencesRepository {
   get(): FinancePreferences;
-  addCategory(name: string): FinancePreferences;
+  addCategory(name: string, color: string): FinancePreferences;
   removeCategory(name: string): FinancePreferences;
   addAccount(name: string): FinancePreferences;
   removeAccount(name: string): FinancePreferences;
+}
+
+function normalizeColor(color: string): string {
+  const value = color.trim();
+  return /^#[0-9A-Fa-f]{6}$/.test(value) ? value.toUpperCase() : "#4BD3D6";
+}
+
+function normalizeCategoryName(name: string): string {
+  return name.trim();
+}
+
+function normalizeCategories(values: CategoryPreference[]): CategoryPreference[] {
+  const map = new Map<string, CategoryPreference>();
+
+  values.forEach((value) => {
+    const name = normalizeCategoryName(value.name);
+    if (!name) return;
+
+    map.set(name.toLowerCase(), {
+      name,
+      color: normalizeColor(value.color),
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.name.localeCompare(b.name, "es", { sensitivity: "base" })
+  );
 }
 
 function normalize(values: string[]): string[] {
@@ -37,8 +73,39 @@ function safeParse(value: string | null): FinancePreferences | null {
     const parsed = JSON.parse(value) as Partial<FinancePreferences>;
     if (!parsed || typeof parsed !== "object") return null;
 
+    const parsedCategories = Array.isArray(parsed.categories)
+      ? parsed.categories
+      : [];
+
+    const categories = normalizeCategories(
+      parsedCategories
+        .map((entry) => {
+          if (typeof entry === "string") {
+            return { name: entry, color: "#4BD3D6" };
+          }
+
+          if (
+            typeof entry === "object" &&
+            entry !== null &&
+            "name" in entry &&
+            typeof (entry as { name: unknown }).name === "string"
+          ) {
+            return {
+              name: (entry as { name: string }).name,
+              color:
+                typeof (entry as { color?: unknown }).color === "string"
+                  ? (entry as { color: string }).color
+                  : "#4BD3D6",
+            };
+          }
+
+          return null;
+        })
+        .filter((entry): entry is CategoryPreference => entry !== null)
+    );
+
     return {
-      categories: Array.isArray(parsed.categories) ? normalize(parsed.categories) : [],
+      categories,
       accounts: Array.isArray(parsed.accounts) ? normalize(parsed.accounts) : [],
     };
   } catch {
@@ -71,7 +138,7 @@ export class LocalStorageFinancePreferencesRepository
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        categories: normalize(preferences.categories),
+        categories: normalizeCategories(preferences.categories),
         accounts: normalize(preferences.accounts),
       })
     );
@@ -81,11 +148,14 @@ export class LocalStorageFinancePreferencesRepository
     return this.read();
   }
 
-  addCategory(name: string): FinancePreferences {
+  addCategory(name: string, color: string): FinancePreferences {
     const current = this.read();
     const next = {
       ...current,
-      categories: normalize([...current.categories, name]),
+      categories: normalizeCategories([
+        ...current.categories,
+        { name, color },
+      ]),
     };
     this.write(next);
     return next;
@@ -94,7 +164,7 @@ export class LocalStorageFinancePreferencesRepository
   removeCategory(name: string): FinancePreferences {
     const current = this.read();
     const nextCategories = current.categories.filter(
-      (category) => category.toLowerCase() !== name.toLowerCase()
+      (category) => category.name.toLowerCase() !== name.toLowerCase()
     );
 
     const next = {

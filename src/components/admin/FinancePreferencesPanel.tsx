@@ -11,6 +11,18 @@ interface FinancePreferencesPanelProps {
   repository?: FinancePreferencesRepository;
 }
 
+const categoryColorOptions = [
+  "#EF4444",
+  "#F59E0B",
+  "#EAB308",
+  "#22C55E",
+  "#06B6D4",
+  "#3B82F6",
+  "#6366F1",
+  "#EC4899",
+  "#6B7280",
+];
+
 export function FinancePreferencesPanel({
   repository = financePreferencesRepository,
 }: FinancePreferencesPanelProps) {
@@ -18,6 +30,7 @@ export function FinancePreferencesPanel({
     repository.get()
   );
   const [categoryInput, setCategoryInput] = useState("");
+  const [categoryColor, setCategoryColor] = useState("#4BD3D6");
   const [accountInput, setAccountInput] = useState("");
   const [error, setError] = useState("");
 
@@ -28,8 +41,9 @@ export function FinancePreferencesPanel({
       return;
     }
 
-    setPreferences(repository.addCategory(value));
+    setPreferences(repository.addCategory(value, categoryColor));
     setCategoryInput("");
+    setCategoryColor("#4BD3D6");
     setError("");
   };
 
@@ -81,7 +95,7 @@ export function FinancePreferencesPanel({
           <article className="bg-background border border-zinc-200/80 rounded-xl p-5 shadow-sm">
           <h3 className="text-lg font-semibold mb-4">Categorias</h3>
 
-          <div className="flex gap-2 mb-4">
+          <div className="space-y-3 mb-4">
             <input
               type="text"
               value={categoryInput}
@@ -89,10 +103,35 @@ export function FinancePreferencesPanel({
               placeholder="Ej. Salud"
               className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
             />
+
+            <div>
+              <p className="text-sm font-medium mb-2">Color</p>
+              <div className="flex flex-wrap gap-2">
+                {categoryColorOptions.map((color) => {
+                  const isSelected = categoryColor === color;
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setCategoryColor(color)}
+                      title={color}
+                      aria-label={`Color ${color}`}
+                      className={`h-8 w-8 rounded-full border-2 transition ${
+                        isSelected
+                          ? "border-foreground ring-2 ring-offset-2 ring-primary"
+                          : "border-zinc-300"
+                      }`}
+                      style={{ backgroundColor: color }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={addCategory}
-              className="rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2"
+              className="rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2 w-full"
             >
               Agregar
             </button>
@@ -101,13 +140,19 @@ export function FinancePreferencesPanel({
           <ul className="space-y-2">
             {preferences.categories.map((category) => (
               <li
-                key={category}
+                key={category.name}
                 className="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2"
               >
-                <span>{category}</span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block w-3 h-3 rounded-full border border-zinc-300"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span>{category.name}</span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => removeCategory(category)}
+                  onClick={() => removeCategory(category.name)}
                   className="text-sm text-red-600 hover:text-red-700"
                 >
                   Eliminar

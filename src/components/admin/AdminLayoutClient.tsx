@@ -9,11 +9,15 @@ interface AdminLayoutClientProps {
   children: React.ReactNode;
 }
 
-const navigationItems = [
+const mainNavigationItems = [
   { href: "/admin/cotizaciones", label: "Cotizaciones" },
   { href: "/admin/finanzas", label: "Finanzas" },
-  { href: "/admin/preferencias", label: "Preferencias" },
 ];
+
+const preferencesNavigationItem = {
+  href: "/admin/preferencias",
+  label: "Preferencias",
+};
 
 export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
   const pathname = usePathname();
@@ -87,7 +91,7 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
 
           {/* Nav */}
           <nav className="flex-1 p-2 space-y-1">
-            {navigationItems.map((item) => {
+            {mainNavigationItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
@@ -114,6 +118,29 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
               );
             })}
           </nav>
+
+          <div className="p-2 border-t border-zinc-200/80">
+            <Link
+              href={preferencesNavigationItem.href}
+              title={isSidebarOpen ? undefined : preferencesNavigationItem.label}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap overflow-hidden ${
+                pathname === preferencesNavigationItem.href
+                  ? "bg-primary text-white"
+                  : "text-muted hover:bg-background hover:text-foreground"
+              }`}
+            >
+              <span className="shrink-0 w-5 text-center font-bold">
+                {preferencesNavigationItem.label.charAt(0)}
+              </span>
+              <span
+                className={`transition-all duration-300 overflow-hidden ${
+                  isSidebarOpen ? "opacity-100 max-w-full" : "opacity-0 max-w-0"
+                }`}
+              >
+                {preferencesNavigationItem.label}
+              </span>
+            </Link>
+          </div>
 
           {/* Footer */}
           <div className="p-2 border-t border-zinc-200/80">

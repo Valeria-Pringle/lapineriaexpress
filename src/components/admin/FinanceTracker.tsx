@@ -85,10 +85,20 @@ export function FinanceTracker({
   const [error, setError] = useState("");
 
   const categories = useMemo(() => {
+    const preferenceNames = preferences.categories.map((category) => category.name);
     return Array.from(
-      new Set([...preferences.categories, ...movements.map((movement) => movement.category)])
+      new Set([...preferenceNames, ...movements.map((movement) => movement.category)])
     ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
   }, [preferences.categories, movements]);
+
+  const categoryColorMap = useMemo(() => {
+    return new Map(
+      preferences.categories.map((category) => [
+        category.name.toLowerCase(),
+        category.color,
+      ])
+    );
+  }, [preferences.categories]);
 
   const accounts = useMemo(() => {
     return Array.from(
@@ -476,7 +486,22 @@ export function FinanceTracker({
                         </p>
                       )}
                     </td>
-                    <td className="py-3 pr-3">{movement.category}</td>
+                    <td className="py-3 pr-3">
+                      <span
+                        className="inline-flex rounded-full px-2 py-1 text-xs font-semibold border"
+                        style={{
+                          color:
+                            categoryColorMap.get(movement.category.toLowerCase()) ||
+                            "#4B5563",
+                          borderColor:
+                            categoryColorMap.get(movement.category.toLowerCase()) ||
+                            "#D1D5DB",
+                          backgroundColor: "#FFFFFF",
+                        }}
+                      >
+                        {movement.category}
+                      </span>
+                    </td>
                     <td className="py-3 pr-3">{movement.account}</td>
                     <td
                       className={`py-3 pr-3 text-right font-semibold whitespace-nowrap ${

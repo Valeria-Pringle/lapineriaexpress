@@ -21,11 +21,11 @@ export interface QuotationItem {
 export function AdminPanel() {
   const [items, setItems] = useState<QuotationItem[]>([]);
   const [selectedProductId, setSelectedProductId] = useState(PRODUCTS[0].id);
-  const [quantity, setQuantity] = useState(1);
+  const [quantityInput, setQuantityInput] = useState("1");
   const [notes, setNotes] = useState("");
-  const [shippingCost, setShippingCost] = useState(0);
+  const [shippingCostInput, setShippingCostInput] = useState("");
   const [customItemName, setCustomItemName] = useState("");
-  const [customItemPrice, setCustomItemPrice] = useState(0);
+  const [customItemPriceInput, setCustomItemPriceInput] = useState("");
   const [includeIVA, setIncludeIVA] = useState(false);
   const [clientData, setClientData] = useState<ClientData>({
     name: "",
@@ -33,18 +33,23 @@ export function AdminPanel() {
     phone: "",
   });
 
+  const shippingCost = Number.parseFloat(shippingCostInput) || 0;
+
   const addItem = () => {
+    const quantity = Math.max(1, Number.parseInt(quantityInput, 10) || 1);
     const newItem: QuotationItem = {
       id: Date.now().toString(),
       productId: selectedProductId,
-      quantity: Math.max(1, quantity),
+      quantity,
     };
 
     setItems([...items, newItem]);
-    setQuantity(1);
+    setQuantityInput("1");
   };
 
   const addCustomItem = () => {
+    const customItemPrice = Number.parseFloat(customItemPriceInput) || 0;
+
     if (!customItemName.trim()) {
       alert("Ingresa el nombre del artículo");
       return;
@@ -63,7 +68,7 @@ export function AdminPanel() {
 
     setItems([...items, newItem]);
     setCustomItemName("");
-    setCustomItemPrice(0);
+    setCustomItemPriceInput("");
   };
 
   const removeItem = (id: string) => {
@@ -210,8 +215,8 @@ export function AdminPanel() {
                     <input
                       type="number"
                       min="1"
-                      value={quantity}
-                      onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                      value={quantityInput}
+                      onChange={(e) => setQuantityInput(e.target.value)}
                       className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
@@ -264,8 +269,8 @@ export function AdminPanel() {
                       type="number"
                       min="0"
                       step="0.01"
-                      value={customItemPrice}
-                      onChange={(e) => setCustomItemPrice(parseFloat(e.target.value) || 0)}
+                      value={customItemPriceInput}
+                      onChange={(e) => setCustomItemPriceInput(e.target.value)}
                       placeholder="0.00"
                       className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     />
@@ -422,8 +427,8 @@ export function AdminPanel() {
                 type="number"
                 min="0"
                 step="0.01"
-                value={shippingCost}
-                onChange={(e) => setShippingCost(parseFloat(e.target.value) || 0)}
+                value={shippingCostInput}
+                onChange={(e) => setShippingCostInput(e.target.value)}
                 placeholder="0.00"
                 className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
