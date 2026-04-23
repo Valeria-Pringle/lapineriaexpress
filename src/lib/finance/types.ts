@@ -9,6 +9,7 @@ export interface FinanceMovement {
   date: string;
   category: string;
   account: string;
+  isHighlighted: boolean;
   createdAt: string;
   updatedAt: string;
 }

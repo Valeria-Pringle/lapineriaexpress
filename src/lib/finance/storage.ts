@@ -1,53 +1,61 @@
+import { supabase } from "@/lib/supabase/client";
 import { FinanceMovement, MovementInput } from "./types";
 
-const STORAGE_KEY = "admin-finance-movements";
+interface MovementRow {
+  id: string;
+  type: "ingreso" | "egreso";
+  amount: number;
+  name: string;
+  comments: string;
+  date: string;
+  category: string;
+  account: string;
+  is_highlighted: boolean | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface FinanceRepository {
-  getAll(): FinanceMovement[];
-  create(input: MovementInput): FinanceMovement;
-  update(id: string, input: MovementInput): FinanceMovement | null;
-  remove(id: string): boolean;
+  getAll(): Promise<FinanceMovement[]>;
+  create(input: MovementInput): Promise<FinanceMovement>;
+  update(id: string, input: MovementInput): Promise<FinanceMovement | null>;
+  setHighlighted(id: string, highlighted: boolean): Promise<FinanceMovement | null>;
+  remove(id: string): Promise<boolean>;
 }
 
-function safeParse(value: string | null): FinanceMovement[] {
-  if (!value) return [];
-
-  try {
-    const parsed = JSON.parse(value) as FinanceMovement[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item) => typeof item?.id === "string");
-  } catch {
-    return [];
-  }
+function mapRowToMovement(row: MovementRow): FinanceMovement {
+  return {
+    id: row.id,
+    type: row.type,
+    amount: Number(row.amount),
+    name: row.name,
+    comments: row.comments || "",
+    date: row.date,
+    category: row.category,
+    account: row.account,
+    isHighlighted: Boolean(row.is_highlighted),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
-function sortByRecentDate(movements: FinanceMovement[]): FinanceMovement[] {
-  return [...movements].sort((a, b) => {
-    const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
-    if (dateDiff !== 0) return dateDiff;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-}
+export class SupabaseFinanceRepository implements FinanceRepository {
+  async getAll(): Promise<FinanceMovement[]> {
+    const { data, error } = await supabase
+      .from("movements")
+      .select("id,type,amount,name,comments,date,category,account,is_highlighted,created_at,updated_at")
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false });
 
-export class LocalStorageFinanceRepository implements FinanceRepository {
-  private read(): FinanceMovement[] {
-    if (typeof window === "undefined") return [];
-    return safeParse(window.localStorage.getItem(STORAGE_KEY));
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data || []).map((row) => mapRowToMovement(row as MovementRow));
   }
 
-  private write(movements: FinanceMovement[]): void {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(movements));
-  }
-
-  getAll(): FinanceMovement[] {
-    return sortByRecentDate(this.read());
-  }
-
-  create(input: MovementInput): FinanceMovement {
-    const now = new Date().toISOString();
-    const movement: FinanceMovement = {
-      id: crypto.randomUUID(),
+  async create(input: MovementInput): Promise<FinanceMovement> {
+    const payload = {
       type: input.type,
       amount: input.amount,
       name: input.name.trim(),
@@ -55,22 +63,23 @@ export class LocalStorageFinanceRepository implements FinanceRepository {
       date: input.date,
       category: input.category.trim(),
       account: input.account.trim(),
-      createdAt: now,
-      updatedAt: now,
     };
 
-    const next = sortByRecentDate([...this.read(), movement]);
-    this.write(next);
-    return movement;
+    const { data, error } = await supabase
+      .from("movements")
+      .insert(payload)
+      .select("id,type,amount,name,comments,date,category,account,is_highlighted,created_at,updated_at")
+      .single();
+
+    if (error || !data) {
+      throw new Error(error?.message || "No se pudo crear el movimiento.");
+    }
+
+    return mapRowToMovement(data as MovementRow);
   }
 
-  update(id: string, input: MovementInput): FinanceMovement | null {
-    const current = this.read();
-    const index = current.findIndex((movement) => movement.id === id);
-    if (index === -1) return null;
-
-    const updated: FinanceMovement = {
-      ...current[index],
+  async update(id: string, input: MovementInput): Promise<FinanceMovement | null> {
+    const payload = {
       type: input.type,
       amount: input.amount,
       name: input.name.trim(),
@@ -78,23 +87,51 @@ export class LocalStorageFinanceRepository implements FinanceRepository {
       date: input.date,
       category: input.category.trim(),
       account: input.account.trim(),
-      updatedAt: new Date().toISOString(),
     };
 
-    const next = [...current];
-    next[index] = updated;
-    this.write(sortByRecentDate(next));
-    return updated;
+    const { data, error } = await supabase
+      .from("movements")
+      .update(payload)
+      .eq("id", id)
+      .select("id,type,amount,name,comments,date,category,account,is_highlighted,created_at,updated_at")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data) return null;
+    return mapRowToMovement(data as MovementRow);
   }
 
-  remove(id: string): boolean {
-    const current = this.read();
-    const next = current.filter((movement) => movement.id !== id);
-    if (next.length === current.length) return false;
-    this.write(sortByRecentDate(next));
-    return true;
+  async setHighlighted(id: string, highlighted: boolean): Promise<FinanceMovement | null> {
+    const { data, error } = await supabase
+      .from("movements")
+      .update({ is_highlighted: highlighted })
+      .eq("id", id)
+      .select("id,type,amount,name,comments,date,category,account,is_highlighted,created_at,updated_at")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data) return null;
+    return mapRowToMovement(data as MovementRow);
+  }
+
+  async remove(id: string): Promise<boolean> {
+    const { error, count } = await supabase
+      .from("movements")
+      .delete({ count: "exact" })
+      .eq("id", id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (count || 0) > 0;
   }
 }
 
-export const financeRepository: FinanceRepository =
-  new LocalStorageFinanceRepository();
+export const financeRepository: FinanceRepository = new SupabaseFinanceRepository();

@@ -1,3 +1,5 @@
+import { supabase } from "@/lib/supabase/client";
+
 export interface CategoryPreference {
   name: string;
   color: string;
@@ -7,8 +9,6 @@ export interface FinancePreferences {
   categories: CategoryPreference[];
   accounts: string[];
 }
-
-const STORAGE_KEY = "admin-finance-preferences";
 
 const defaultPreferences: FinancePreferences = {
   categories: [
@@ -20,11 +20,11 @@ const defaultPreferences: FinancePreferences = {
 };
 
 export interface FinancePreferencesRepository {
-  get(): FinancePreferences;
-  addCategory(name: string, color: string): FinancePreferences;
-  removeCategory(name: string): FinancePreferences;
-  addAccount(name: string): FinancePreferences;
-  removeAccount(name: string): FinancePreferences;
+  get(): Promise<FinancePreferences>;
+  addCategory(name: string, color: string): Promise<FinancePreferences>;
+  removeCategory(name: string): Promise<FinancePreferences>;
+  addAccount(name: string): Promise<FinancePreferences>;
+  removeAccount(name: string): Promise<FinancePreferences>;
 }
 
 function normalizeColor(color: string): string {
@@ -66,142 +66,177 @@ function normalize(values: string[]): string[] {
   return unique.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }
 
-function safeParse(value: string | null): FinancePreferences | null {
-  if (!value) return null;
-
-  try {
-    const parsed = JSON.parse(value) as Partial<FinancePreferences>;
-    if (!parsed || typeof parsed !== "object") return null;
-
-    const parsedCategories = Array.isArray(parsed.categories)
-      ? parsed.categories
-      : [];
-
-    const categories = normalizeCategories(
-      parsedCategories
-        .map((entry) => {
-          if (typeof entry === "string") {
-            return { name: entry, color: "#4BD3D6" };
-          }
-
-          if (
-            typeof entry === "object" &&
-            entry !== null &&
-            "name" in entry &&
-            typeof (entry as { name: unknown }).name === "string"
-          ) {
-            return {
-              name: (entry as { name: string }).name,
-              color:
-                typeof (entry as { color?: unknown }).color === "string"
-                  ? (entry as { color: string }).color
-                  : "#4BD3D6",
-            };
-          }
-
-          return null;
-        })
-        .filter((entry): entry is CategoryPreference => entry !== null)
-    );
-
-    return {
-      categories,
-      accounts: Array.isArray(parsed.accounts) ? normalize(parsed.accounts) : [],
-    };
-  } catch {
-    return null;
-  }
+interface CategoryRow {
+  name: string;
+  color: string;
 }
 
-export class LocalStorageFinancePreferencesRepository
+interface AccountRow {
+  name: string;
+}
+
+export class SupabaseFinancePreferencesRepository
   implements FinancePreferencesRepository
 {
-  private read(): FinancePreferences {
-    if (typeof window === "undefined") return defaultPreferences;
+  async get(): Promise<FinancePreferences> {
+    const [{ data: categoriesData, error: categoriesError }, { data: accountsData, error: accountsError }] =
+      await Promise.all([
+        supabase
+          .from("categories")
+          .select("name,color"),
+        supabase
+          .from("accounts")
+          .select("name"),
+      ]);
 
-    const saved = safeParse(window.localStorage.getItem(STORAGE_KEY));
-    if (!saved) return defaultPreferences;
+    if (categoriesError) {
+      throw new Error(categoriesError.message);
+    }
+    if (accountsError) {
+      throw new Error(accountsError.message);
+    }
+
+    const categories = normalizeCategories(
+      ((categoriesData || []) as CategoryRow[]).map((row) => ({
+        name: row.name,
+        color: normalizeColor(row.color),
+      }))
+    );
+
+    const accounts = normalize(((accountsData || []) as AccountRow[]).map((row) => row.name));
 
     return {
-      categories:
-        saved.categories.length > 0
-          ? saved.categories
-          : defaultPreferences.categories,
-      accounts:
-        saved.accounts.length > 0 ? saved.accounts : defaultPreferences.accounts,
+      categories: categories.length > 0 ? categories : defaultPreferences.categories,
+      accounts: accounts.length > 0 ? accounts : defaultPreferences.accounts,
     };
   }
 
-  private write(preferences: FinancePreferences): void {
-    if (typeof window === "undefined") return;
+  async addCategory(name: string, color: string): Promise<FinancePreferences> {
+    const nextName = normalizeCategoryName(name);
+    const nextColor = normalizeColor(color);
 
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        categories: normalizeCategories(preferences.categories),
-        accounts: normalize(preferences.accounts),
-      })
-    );
+    if (!nextName) {
+      return this.get();
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from("categories")
+      .select("id")
+      .ilike("name", nextName)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error(existingError.message);
+    }
+
+    if (existing?.id) {
+      const { error: updateError } = await supabase
+        .from("categories")
+        .update({ color: nextColor })
+        .eq("id", existing.id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from("categories")
+        .insert({ name: nextName, color: nextColor });
+
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+    }
+
+    return this.get();
   }
 
-  get(): FinancePreferences {
-    return this.read();
+  async removeCategory(name: string): Promise<FinancePreferences> {
+    const nextName = normalizeCategoryName(name);
+    const { error } = await supabase
+      .from("categories")
+      .delete()
+      .ilike("name", nextName);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const current = await this.get();
+    if (current.categories.length > 0) {
+      return current;
+    }
+
+    const { error: seedError } = await supabase
+      .from("categories")
+      .insert(defaultPreferences.categories);
+
+    if (seedError) {
+      throw new Error(seedError.message);
+    }
+
+    return this.get();
   }
 
-  addCategory(name: string, color: string): FinancePreferences {
-    const current = this.read();
-    const next = {
-      ...current,
-      categories: normalizeCategories([
-        ...current.categories,
-        { name, color },
-      ]),
-    };
-    this.write(next);
-    return next;
+  async addAccount(name: string): Promise<FinancePreferences> {
+    const nextName = name.trim();
+    if (!nextName) {
+      return this.get();
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from("accounts")
+      .select("name")
+      .ilike("name", nextName)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error(existingError.message);
+    }
+
+    if (existing?.name) {
+      return this.get();
+    }
+
+    const { error } = await supabase
+      .from("accounts")
+      .insert({ name: nextName });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return this.get();
   }
 
-  removeCategory(name: string): FinancePreferences {
-    const current = this.read();
-    const nextCategories = current.categories.filter(
-      (category) => category.name.toLowerCase() !== name.toLowerCase()
-    );
+  async removeAccount(name: string): Promise<FinancePreferences> {
+    const nextName = name.trim();
+    const { error } = await supabase
+      .from("accounts")
+      .delete()
+      .ilike("name", nextName);
 
-    const next = {
-      ...current,
-      categories:
-        nextCategories.length > 0 ? nextCategories : defaultPreferences.categories,
-    };
+    if (error) {
+      throw new Error(error.message);
+    }
 
-    this.write(next);
-    return next;
-  }
+    const current = await this.get();
+    if (current.accounts.length > 0) {
+      return current;
+    }
 
-  addAccount(name: string): FinancePreferences {
-    const current = this.read();
-    const next = {
-      ...current,
-      accounts: normalize([...current.accounts, name]),
-    };
-    this.write(next);
-    return next;
-  }
+    const defaults = defaultPreferences.accounts.map((account) => ({ name: account }));
+    const { error: seedError } = await supabase
+      .from("accounts")
+      .insert(defaults);
 
-  removeAccount(name: string): FinancePreferences {
-    const current = this.read();
-    const nextAccounts = current.accounts.filter(
-      (account) => account.toLowerCase() !== name.toLowerCase()
-    );
+    if (seedError) {
+      throw new Error(seedError.message);
+    }
 
-    const next = {
-      ...current,
-      accounts: nextAccounts.length > 0 ? nextAccounts : defaultPreferences.accounts,
-    };
-
-    this.write(next);
-    return next;
+    return this.get();
   }
 }
 
 export const financePreferencesRepository: FinancePreferencesRepository =
-  new LocalStorageFinancePreferencesRepository();
+  new SupabaseFinancePreferencesRepository();

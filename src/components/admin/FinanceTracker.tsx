@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   financeRepository,
   type FinanceRepository,
@@ -84,36 +84,59 @@ function getCurrentMonthKey(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function formatMonthLabel(monthKey: string): string {
-  const [year, month] = monthKey.split("-");
-  if (!year || !month) return monthKey;
-
-  const date = new Date(`${year}-${month}-01T00:00:00`);
-  if (!Number.isFinite(date.getTime())) return monthKey;
-
-  return new Intl.DateTimeFormat("es-MX", {
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
 export function FinanceTracker({
   repository = financeRepository,
   preferencesRepository = financePreferencesRepository,
 }: FinanceTrackerProps) {
   const currentMonthKey = getCurrentMonthKey();
-  const [movements, setMovements] = useState<FinanceMovement[]>(() =>
-    repository.getAll()
-  );
-  const [preferences] = useState<FinancePreferences>(() =>
-    preferencesRepository.get()
-  );
+  const [movements, setMovements] = useState<FinanceMovement[]>([]);
+  const [preferences, setPreferences] = useState<FinancePreferences>({
+    categories: [],
+    accounts: [],
+  });
   const [form, setForm] = useState<MovementInput>(defaultForm);
   const [filters, setFilters] = useState<MovementFilters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadInitialData = async () => {
+      setLoading(true);
+      try {
+        const [nextMovements, nextPreferences] = await Promise.all([
+          repository.getAll(),
+          preferencesRepository.get(),
+        ]);
+
+        if (!isMounted) return;
+        setMovements(nextMovements);
+        setPreferences(nextPreferences);
+        setError("");
+      } catch (loadError) {
+        if (!isMounted) return;
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "No se pudieron cargar los datos de finanzas."
+        );
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadInitialData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [repository, preferencesRepository]);
 
   const categories = useMemo(() => {
     const preferenceNames = preferences.categories.map((category) => category.name);
@@ -172,14 +195,23 @@ export function FinanceTracker({
     });
   }, [currentMonthMovements, filters]);
 
-  const summary = useMemo(() => buildSummary(filteredMovements), [filteredMovements]);
+  const summary = useMemo(
+    () => buildSummary(currentMonthMovements),
+    [currentMonthMovements]
+  );
 
-  const totalPages = Math.max(1, Math.ceil(filteredMovements.length / PAGE_SIZE));
+  const displayedMovements = useMemo(() => {
+    const highlighted = filteredMovements.filter((movement) => movement.isHighlighted);
+    const regular = filteredMovements.filter((movement) => !movement.isHighlighted);
+    return [...highlighted, ...regular];
+  }, [filteredMovements]);
+
+  const totalPages = Math.max(1, Math.ceil(displayedMovements.length / PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const paginatedMovements = useMemo(() => {
     const start = (safeCurrentPage - 1) * PAGE_SIZE;
-    return filteredMovements.slice(start, start + PAGE_SIZE);
-  }, [filteredMovements, safeCurrentPage]);
+    return displayedMovements.slice(start, start + PAGE_SIZE);
+  }, [displayedMovements, safeCurrentPage]);
 
   const resetForm = () => {
     setForm(defaultForm);
@@ -206,11 +238,12 @@ export function FinanceTracker({
     return null;
   };
 
-  const refreshMovements = () => {
-    setMovements(repository.getAll());
+  const refreshMovements = async () => {
+    const nextMovements = await repository.getAll();
+    setMovements(nextMovements);
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const validationError = validate(form);
 
@@ -219,15 +252,23 @@ export function FinanceTracker({
       return;
     }
 
-    if (editingId) {
-      repository.update(editingId, form);
-    } else {
-      repository.create(form);
-    }
+    try {
+      if (editingId) {
+        await repository.update(editingId, form);
+      } else {
+        await repository.create(form);
+      }
 
-    refreshMovements();
-    setCurrentPage(1);
-    resetForm();
+      await refreshMovements();
+      setCurrentPage(1);
+      resetForm();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "No se pudo guardar el movimiento."
+      );
+    }
   };
 
   const handleEdit = (movement: FinanceMovement) => {
@@ -244,20 +285,50 @@ export function FinanceTracker({
     setError("");
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const shouldDelete = window.confirm(
       "Esta seguro de eliminar este movimiento?"
     );
     if (!shouldDelete) return;
 
-    repository.remove(id);
-    refreshMovements();
-    setCurrentPage(1);
+    try {
+      await repository.remove(id);
+      await refreshMovements();
+      setCurrentPage(1);
 
-    if (editingId === id) {
-      resetForm();
+      if (editingId === id) {
+        resetForm();
+      }
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "No se pudo eliminar el movimiento."
+      );
     }
   };
+
+  const handleToggleHighlighted = async (movement: FinanceMovement) => {
+    try {
+      await repository.setHighlighted(movement.id, !movement.isHighlighted);
+      await refreshMovements();
+      setCurrentPage(1);
+    } catch (toggleError) {
+      setError(
+        toggleError instanceof Error
+          ? toggleError.message
+          : "No se pudo actualizar el destacado."
+      );
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="rounded-xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+        <p className="text-sm text-muted">Cargando datos de finanzas...</p>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -568,7 +639,7 @@ export function FinanceTracker({
                 </tr>
               </thead>
               <tbody>
-                {filteredMovements.length === 0 && (
+                {displayedMovements.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-6 text-center text-muted">
                       No hay movimientos para los filtros seleccionados.
@@ -577,7 +648,12 @@ export function FinanceTracker({
                 )}
 
                 {paginatedMovements.map((movement) => (
-                  <tr key={movement.id} className="border-b border-zinc-100 align-top">
+                  <tr
+                    key={movement.id}
+                    className={`border-b border-zinc-100 align-top ${
+                      movement.isHighlighted ? "bg-amber-50" : ""
+                    }`}
+                  >
                     <td className="py-3 pr-3 whitespace-nowrap">{movement.date}</td>
                     <td className="py-3 pr-3">
                       <span
@@ -639,6 +715,17 @@ export function FinanceTracker({
                         >
                           Eliminar
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleHighlighted(movement)}
+                          className={`rounded-md px-2 py-1 text-xs border ${
+                            movement.isHighlighted
+                              ? "border-amber-300 text-amber-800 bg-amber-100"
+                              : "border-zinc-300 hover:bg-background"
+                          }`}
+                        >
+                          {movement.isHighlighted ? "Quitar" : "Destacar"}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -649,12 +736,12 @@ export function FinanceTracker({
 
             <div className="mt-auto shrink-0 pt-4 border-t border-zinc-200/80 flex items-center justify-between gap-3 bg-white">
               <p className="text-xs text-muted">
-                {filteredMovements.length === 0
+                {displayedMovements.length === 0
                   ? "Sin resultados"
                   : `Mostrando ${(safeCurrentPage - 1) * PAGE_SIZE + 1}-${Math.min(
                       safeCurrentPage * PAGE_SIZE,
-                      filteredMovements.length
-                    )} de ${filteredMovements.length}`}
+                      displayedMovements.length
+                    )} de ${displayedMovements.length}`}
               </p>
               <div className="flex items-center gap-2">
                 <button

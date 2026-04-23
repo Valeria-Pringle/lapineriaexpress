@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ExcelJS from "exceljs";
 import {
   financeRepository,
@@ -220,11 +220,54 @@ export function FinanceHistory({
   preferencesRepository = financePreferencesRepository,
 }: FinanceHistoryProps) {
   const currentMonthKey = getCurrentMonthKey();
-  const [movements] = useState<FinanceMovement[]>(() => repository.getAll());
-  const [preferences] = useState<FinancePreferences>(() => preferencesRepository.get());
+  const [movements, setMovements] = useState<FinanceMovement[]>([]);
+  const [preferences, setPreferences] = useState<FinancePreferences>({
+    categories: [],
+    accounts: [],
+  });
   const [historicalMonth, setHistoricalMonth] = useState(currentMonthKey);
   const [currentPage, setCurrentPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [nextMovements, nextPreferences] = await Promise.all([
+          repository.getAll(),
+          preferencesRepository.get(),
+        ]);
+
+        if (!isMounted) return;
+
+        setMovements(nextMovements);
+        setPreferences(nextPreferences);
+        setError("");
+      } catch (loadError) {
+        if (!isMounted) return;
+
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "No se pudo cargar el historico de finanzas."
+        );
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [repository, preferencesRepository]);
 
   const categoryColorMap = useMemo(() => {
     return new Map(
@@ -261,8 +304,22 @@ export function FinanceHistory({
     return historicalMovements.slice(start, start + PAGE_SIZE);
   }, [historicalMovements, safeCurrentPage]);
 
+  if (loading) {
+    return (
+      <section className="rounded-xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+        <p className="text-sm text-muted">Cargando historico de finanzas...</p>
+      </section>
+    );
+  }
+
   return (
     <section className="bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm space-y-5">
+      {error && (
+        <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold">Historico Mensual</h3>

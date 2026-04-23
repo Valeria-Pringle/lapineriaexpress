@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   financePreferencesRepository,
   type FinancePreferences,
@@ -26,54 +26,133 @@ const categoryColorOptions = [
 export function FinancePreferencesPanel({
   repository = financePreferencesRepository,
 }: FinancePreferencesPanelProps) {
-  const [preferences, setPreferences] = useState<FinancePreferences>(() =>
-    repository.get()
-  );
+  const [preferences, setPreferences] = useState<FinancePreferences>({
+    categories: [],
+    accounts: [],
+  });
   const [categoryInput, setCategoryInput] = useState("");
   const [categoryColor, setCategoryColor] = useState("#4BD3D6");
   const [accountInput, setAccountInput] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const addCategory = () => {
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPreferences = async () => {
+      setLoading(true);
+      try {
+        const next = await repository.get();
+        if (!isMounted) return;
+        setPreferences(next);
+        setError("");
+      } catch (loadError) {
+        if (!isMounted) return;
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "No se pudieron cargar las preferencias."
+        );
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadPreferences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [repository]);
+
+  const addCategory = async () => {
     const value = categoryInput.trim();
     if (!value) {
       setError("Ingresa un nombre de categoria valido.");
       return;
     }
 
-    setPreferences(repository.addCategory(value, categoryColor));
-    setCategoryInput("");
-    setCategoryColor("#4BD3D6");
-    setError("");
+    try {
+      const next = await repository.addCategory(value, categoryColor);
+      setPreferences(next);
+      setCategoryInput("");
+      setCategoryColor("#4BD3D6");
+      setError("");
+    } catch (addError) {
+      setError(
+        addError instanceof Error
+          ? addError.message
+          : "No se pudo agregar la categoria."
+      );
+    }
   };
 
-  const addAccount = () => {
+  const addAccount = async () => {
     const value = accountInput.trim();
     if (!value) {
       setError("Ingresa un nombre de cuenta valido.");
       return;
     }
 
-    setPreferences(repository.addAccount(value));
-    setAccountInput("");
-    setError("");
+    try {
+      const next = await repository.addAccount(value);
+      setPreferences(next);
+      setAccountInput("");
+      setError("");
+    } catch (addError) {
+      setError(
+        addError instanceof Error
+          ? addError.message
+          : "No se pudo agregar la cuenta."
+      );
+    }
   };
 
-  const removeCategory = (name: string) => {
+  const removeCategory = async (name: string) => {
     const shouldDelete = window.confirm(
       `Eliminar categoria \"${name}\"?`
     );
     if (!shouldDelete) return;
 
-    setPreferences(repository.removeCategory(name));
+    try {
+      const next = await repository.removeCategory(name);
+      setPreferences(next);
+      setError("");
+    } catch (removeError) {
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "No se pudo eliminar la categoria."
+      );
+    }
   };
 
-  const removeAccount = (name: string) => {
+  const removeAccount = async (name: string) => {
     const shouldDelete = window.confirm(`Eliminar cuenta \"${name}\"?`);
     if (!shouldDelete) return;
 
-    setPreferences(repository.removeAccount(name));
+    try {
+      const next = await repository.removeAccount(name);
+      setPreferences(next);
+      setError("");
+    } catch (removeError) {
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "No se pudo eliminar la cuenta."
+      );
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+        <p className="text-sm text-muted">Cargando preferencias de finanzas...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl">

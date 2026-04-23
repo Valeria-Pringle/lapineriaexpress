@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Login } from "@/components/admin/Login";
+import { supabase } from "@/lib/supabase/client";
 
 interface AdminLayoutClientProps {
   children: React.ReactNode;
@@ -25,21 +26,43 @@ const preferencesNavigationItem = {
 
 export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
   const pathname = usePathname();
-  const [, setAuthTick] = useState(0);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authResolved, setAuthResolved] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const isAuthenticated =
-    typeof window !== "undefined" &&
-    sessionStorage.getItem("adminLoggedIn") === "true";
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!isMounted) return;
+      setIsAuthenticated(Boolean(data.session));
+      setAuthResolved(true);
+    };
+
+    void resolveSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session));
+      setAuthResolved(true);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleLogin = () => {
-    sessionStorage.setItem("adminLoggedIn", "true");
-    setAuthTick((prev) => prev + 1);
+    setIsAuthenticated(true);
+    setAuthResolved(true);
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem("adminLoggedIn");
-    setAuthTick((prev) => prev + 1);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
   };
 
   const pageTitleByPath: Record<string, string> = {
@@ -49,7 +72,7 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
     "/admin/preferencias": "Preferencias",
   };
 
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || !authResolved) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">

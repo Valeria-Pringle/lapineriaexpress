@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { supabase } from "@/lib/supabase/client";
 
 interface LoginProps {
   onLogin: () => void;
@@ -11,15 +12,39 @@ export function Login({ onLogin }: LoginProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const ADMIN_USERNAME = "loritabonita";
-  const ADMIN_PASSWORD = "loritabonita";
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    // Use a security-definer RPC to look up the email without being blocked by RLS.
+    const { data: email, error: lookupError } = await supabase
+      .rpc("get_email_by_username", { p_username: username.trim().toLowerCase() });
+
+    if (lookupError) {
+      setLoading(false);
+      setError("Usuario o contraseña incorrectos");
+      setPassword("");
+      return;
+    }
+
+    if (!email) {
+      setLoading(false);
+      setError("Usuario o contraseña incorrectos");
+      setPassword("");
+      return;
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: email as string,
+      password,
+    });
+
+    setLoading(false);
+
+    if (!signInError) {
       onLogin();
     } else {
       setError("Usuario o contraseña incorrectos");
@@ -58,6 +83,7 @@ export function Login({ onLogin }: LoginProps) {
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="admin"
+                autoComplete="username"
               />
             </div>
 
@@ -83,9 +109,10 @@ export function Login({ onLogin }: LoginProps) {
 
             <button
               type="submit"
+              disabled={loading}
               className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg transition"
             >
-              Iniciar sesión
+              {loading ? "Ingresando..." : "Iniciar sesión"}
             </button>
           </form>
 
