@@ -11,7 +11,11 @@ import {
   type FinancePreferences,
   type FinancePreferencesRepository,
 } from "@/lib/finance/preferences";
-import { type FinanceMovement, type MovementSummary } from "@/lib/finance/types";
+import {
+  type FinanceMovement,
+  type MovementInput,
+  type MovementSummary,
+} from "@/lib/finance/types";
 
 interface FinanceHistoryProps {
   repository?: FinanceRepository;
@@ -19,6 +23,16 @@ interface FinanceHistoryProps {
 }
 
 const PAGE_SIZE = 10;
+
+const defaultEditForm: MovementInput = {
+  type: "ingreso",
+  amount: 0,
+  name: "",
+  comments: "",
+  date: new Date().toISOString().slice(0, 10),
+  category: "",
+  account: "",
+};
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("es-MX", {
@@ -41,6 +55,12 @@ function buildSummary(movements: FinanceMovement[]): MovementSummary {
     totalExpense,
     balance: totalIncome - totalExpense,
   };
+}
+
+function isValidDate(dateString: string): boolean {
+  if (!dateString) return false;
+  const date = new Date(dateString);
+  return Number.isFinite(date.getTime());
 }
 
 function getMonthKeyFromDate(dateString: string): string {
@@ -226,8 +246,12 @@ export function FinanceHistory({
     accounts: [],
   });
   const [historicalMonth, setHistoricalMonth] = useState(currentMonthKey);
+  const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  const [editingMovementId, setEditingMovementId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<MovementInput>(defaultEditForm);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -278,6 +302,19 @@ export function FinanceHistory({
     );
   }, [preferences.categories]);
 
+  const categories = useMemo(() => {
+    const preferenceNames = preferences.categories.map((category) => category.name);
+    return Array.from(
+      new Set([...preferenceNames, ...movements.map((movement) => movement.category)])
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [preferences.categories, movements]);
+
+  const accounts = useMemo(() => {
+    return Array.from(
+      new Set([...preferences.accounts, ...movements.map((movement) => movement.account)])
+    ).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  }, [preferences.accounts, movements]);
+
   const availableMonths = useMemo(() => {
     return Array.from(
       new Set([currentMonthKey, ...movements.map((movement) => getMonthKeyFromDate(movement.date))])
@@ -287,14 +324,23 @@ export function FinanceHistory({
   }, [movements, currentMonthKey]);
 
   const historicalMovements = useMemo(() => {
-    return movements.filter(
+    const byMonth = movements.filter(
       (movement) => getMonthKeyFromDate(movement.date) === historicalMonth
     );
-  }, [movements, historicalMonth]);
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return byMonth;
+    return byMonth.filter(
+      (movement) =>
+        movement.name.toLowerCase().includes(query) ||
+        movement.category.toLowerCase().includes(query) ||
+        movement.account.toLowerCase().includes(query) ||
+        (movement.comments ?? "").toLowerCase().includes(query)
+    );
+  }, [movements, historicalMonth, searchQuery]);
 
   const historicalSummary = useMemo(
-    () => buildSummary(historicalMovements),
-    [historicalMovements]
+    () => buildSummary(movements.filter((m) => getMonthKeyFromDate(m.date) === historicalMonth)),
+    [movements, historicalMonth]
   );
 
   const totalPages = Math.max(1, Math.ceil(historicalMovements.length / PAGE_SIZE));
@@ -303,6 +349,98 @@ export function FinanceHistory({
     const start = (safeCurrentPage - 1) * PAGE_SIZE;
     return historicalMovements.slice(start, start + PAGE_SIZE);
   }, [historicalMovements, safeCurrentPage]);
+
+  const refreshMovements = async () => {
+    const nextMovements = await repository.getAll();
+    setMovements(nextMovements);
+  };
+
+  const validateMovement = (data: MovementInput): string | null => {
+    if (!Number.isFinite(data.amount) || data.amount <= 0) {
+      return "El monto es obligatorio y debe ser mayor a 0.";
+    }
+    if (!data.name.trim()) {
+      return "El nombre del movimiento es obligatorio.";
+    }
+    if (!isValidDate(data.date)) {
+      return "La fecha no es valida.";
+    }
+    if (!data.category.trim()) {
+      return "La categoria es obligatoria.";
+    }
+    if (!data.account.trim()) {
+      return "La cuenta es obligatoria.";
+    }
+    return null;
+  };
+
+  const startEdit = (movement: FinanceMovement) => {
+    setEditingMovementId(movement.id);
+    setEditForm({
+      type: movement.type,
+      amount: movement.amount,
+      name: movement.name,
+      comments: movement.comments || "",
+      date: movement.date,
+      category: movement.category,
+      account: movement.account,
+    });
+    setError("");
+  };
+
+  const cancelEdit = () => {
+    setEditingMovementId(null);
+    setEditForm(defaultEditForm);
+  };
+
+  const saveEdit = async () => {
+    if (!editingMovementId) return;
+
+    const validationError = validateMovement(editForm);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      await repository.update(editingMovementId, editForm);
+      await refreshMovements();
+      cancelEdit();
+      setError("");
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "No se pudo guardar el movimiento."
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteMovement = async (id: string) => {
+    const shouldDelete = window.confirm(
+      "Esta seguro de eliminar este movimiento historico?"
+    );
+    if (!shouldDelete) return;
+
+    try {
+      await repository.remove(id);
+      await refreshMovements();
+      setCurrentPage(1);
+      if (editingMovementId === id) {
+        cancelEdit();
+      }
+      setError("");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "No se pudo eliminar el movimiento."
+      );
+    }
+  };
 
   if (loading) {
     return (
@@ -335,6 +473,8 @@ export function FinanceHistory({
               onChange={(event) => {
                 setHistoricalMonth(event.target.value);
                 setCurrentPage(1);
+                setSearchQuery("");
+                cancelEdit();
               }}
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
@@ -379,6 +519,134 @@ export function FinanceHistory({
         </div>
       </div>
 
+      {editingMovementId && (
+        <div className="rounded-xl border border-zinc-200/80 bg-background p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h4 className="text-sm font-semibold">Editar movimiento historico</h4>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="rounded-md border border-zinc-300 px-3 py-1 text-xs hover:bg-white"
+            >
+              Cancelar
+            </button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <label className="block text-xs font-medium mb-1">Tipo</label>
+              <select
+                value={editForm.type}
+                onChange={(event) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    type: event.target.value as "ingreso" | "egreso",
+                  }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="ingreso">Ingreso</option>
+                <option value="egreso">Egreso</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Monto</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.amount || ""}
+                onChange={(event) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    amount: Number.parseFloat(event.target.value) || 0,
+                  }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Fecha</label>
+              <input
+                type="date"
+                value={editForm.date}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, date: event.target.value }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Nombre</label>
+              <input
+                type="text"
+                value={editForm.name}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, name: event.target.value }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Categoria</label>
+              <select
+                value={editForm.category}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, category: event.target.value }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Selecciona categoria</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Cuenta</label>
+              <select
+                value={editForm.account}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, account: event.target.value }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Selecciona cuenta</option>
+                {accounts.map((account) => (
+                  <option key={account} value={account}>
+                    {account}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2 xl:col-span-2">
+              <label className="block text-xs font-medium mb-1">Comentarios</label>
+              <input
+                type="text"
+                value={editForm.comments || ""}
+                onChange={(event) =>
+                  setEditForm((prev) => ({ ...prev, comments: event.target.value }))
+                }
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void saveEdit()}
+              disabled={savingEdit}
+              className="rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2 text-sm disabled:opacity-60"
+            >
+              {savingEdit ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-3">
         <article className="rounded-xl bg-background border border-zinc-200/80 p-4">
           <p className="text-xs uppercase tracking-wide text-muted">Ingresos</p>
@@ -401,6 +669,35 @@ export function FinanceHistory({
       </div>
 
       <div className="flex flex-col min-h-[420px]">
+        <div className="relative mb-3">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            placeholder="Buscar por nombre, categoría, cuenta o comentarios..."
+            className="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(""); setCurrentPage(1); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+              aria-label="Limpiar búsqueda"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+
         <div className="flex-1 min-h-0 overflow-auto">
           <table className="w-full text-sm">
           <thead>
@@ -411,12 +708,13 @@ export function FinanceHistory({
               <th className="py-2 pr-3">Categoria</th>
               <th className="py-2 pr-3">Cuenta</th>
               <th className="py-2 pr-3 text-right">Monto</th>
+              <th className="py-2 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {historicalMovements.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-muted">
+                <td colSpan={7} className="py-6 text-center text-muted">
                   No hay movimientos en este mes.
                 </td>
               </tr>
@@ -468,6 +766,54 @@ export function FinanceHistory({
                 >
                   {movement.type === "ingreso" ? "+" : "-"}
                   {formatCurrency(movement.amount)}
+                </td>
+                <td className="py-3 text-right whitespace-nowrap">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(movement)}
+                      aria-label="Editar movimiento historico"
+                      title="Editar"
+                      className="rounded-md border border-zinc-300 p-1.5 hover:bg-background"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M12 20h9" strokeLinecap="round" strokeLinejoin="round" />
+                        <path
+                          d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span className="sr-only">Editar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteMovement(movement.id)}
+                      aria-label="Eliminar movimiento historico"
+                      title="Eliminar"
+                      className="rounded-md border border-red-300 text-red-700 p-1.5 hover:bg-red-50"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M3 6h18" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M8 6V4h8v2" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M19 6l-1 14H6L5 6" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M10 11v6M14 11v6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span className="sr-only">Eliminar</span>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

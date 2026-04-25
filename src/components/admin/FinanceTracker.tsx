@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   financeRepository,
   type FinanceRepository,
@@ -95,9 +95,12 @@ export function FinanceTracker({
     accounts: [],
   });
   const [form, setForm] = useState<MovementInput>(defaultForm);
+  const originalFormRef = useRef<MovementInput | null>(null);
   const [filters, setFilters] = useState<MovementFilters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -201,10 +204,20 @@ export function FinanceTracker({
   );
 
   const displayedMovements = useMemo(() => {
-    const highlighted = filteredMovements.filter((movement) => movement.isHighlighted);
-    const regular = filteredMovements.filter((movement) => !movement.isHighlighted);
+    const query = searchQuery.trim().toLowerCase();
+    const searched = query
+      ? filteredMovements.filter(
+          (movement) =>
+            movement.name.toLowerCase().includes(query) ||
+            movement.category.toLowerCase().includes(query) ||
+            movement.account.toLowerCase().includes(query) ||
+            (movement.comments ?? "").toLowerCase().includes(query)
+        )
+      : filteredMovements;
+    const highlighted = searched.filter((movement) => movement.isHighlighted);
+    const regular = searched.filter((movement) => !movement.isHighlighted);
     return [...highlighted, ...regular];
-  }, [filteredMovements]);
+  }, [filteredMovements, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(displayedMovements.length / PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -213,8 +226,32 @@ export function FinanceTracker({
     return displayedMovements.slice(start, start + PAGE_SIZE);
   }, [displayedMovements, safeCurrentPage]);
 
+  const hasChanges = useMemo(() => {
+    if (!editingId) {
+      // New movement: consider changed if any meaningful field is filled
+      return (
+        form.amount > 0 ||
+        form.name.trim() !== "" ||
+        form.category.trim() !== "" ||
+        form.account.trim() !== ""
+      );
+    }
+    const orig = originalFormRef.current;
+    if (!orig) return false;
+    return (
+      form.type !== orig.type ||
+      form.amount !== orig.amount ||
+      form.name.trim() !== orig.name.trim() ||
+      (form.comments ?? "").trim() !== (orig.comments ?? "").trim() ||
+      form.date !== orig.date ||
+      form.category.trim() !== orig.category.trim() ||
+      form.account.trim() !== orig.account.trim()
+    );
+  }, [editingId, form]);
+
   const resetForm = () => {
     setForm(defaultForm);
+    originalFormRef.current = null;
     setEditingId(null);
     setError("");
   };
@@ -245,6 +282,8 @@ export function FinanceTracker({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saving) return;
+
     const validationError = validate(form);
 
     if (validationError) {
@@ -252,6 +291,7 @@ export function FinanceTracker({
       return;
     }
 
+    setSaving(true);
     try {
       if (editingId) {
         await repository.update(editingId, form);
@@ -268,12 +308,13 @@ export function FinanceTracker({
           ? submitError.message
           : "No se pudo guardar el movimiento."
       );
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEdit = (movement: FinanceMovement) => {
-    setEditingId(movement.id);
-    setForm({
+    const snapshot: MovementInput = {
       type: movement.type,
       amount: movement.amount,
       name: movement.name,
@@ -281,7 +322,10 @@ export function FinanceTracker({
       date: movement.date,
       category: movement.category,
       account: movement.account,
-    });
+    };
+    originalFormRef.current = snapshot;
+    setEditingId(movement.id);
+    setForm(snapshot);
     setError("");
   };
 
@@ -477,9 +521,10 @@ export function FinanceTracker({
             <div className="flex gap-2 pt-1 mt-auto">
               <button
                 type="submit"
-                className="flex-1 rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2"
+                disabled={saving || !hasChanges}
+                className="flex-1 rounded-lg bg-primary hover:bg-primary-dark text-white font-semibold px-4 py-2 disabled:opacity-60"
               >
-                {editingId ? "Guardar cambios" : "Guardar movimiento"}
+                {saving ? "Guardando..." : editingId ? "Guardar cambios" : "Guardar movimiento"}
               </button>
               {editingId && (
                 <button
@@ -499,6 +544,35 @@ export function FinanceTracker({
           <p className="text-sm text-muted mt-1 mb-4">
             Mes actual. Ordenados por fecha, del mas reciente al mas antiguo.
           </p>
+
+          <div className="relative mb-3">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              placeholder="Buscar por nombre, categoría, cuenta o comentarios..."
+              className="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); setCurrentPage(1); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                aria-label="Limpiar búsqueda"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
+          </div>
 
           <div className="mb-4 rounded-xl border border-zinc-200/80 bg-background">
             <button
@@ -629,6 +703,7 @@ export function FinanceTracker({
               <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b border-zinc-200/80">
+                  <th className="py-2 pr-2 w-10 text-center">*</th>
                   <th className="py-2 pr-3">Fecha</th>
                   <th className="py-2 pr-3">Tipo</th>
                   <th className="py-2 pr-3">Nombre</th>
@@ -641,7 +716,7 @@ export function FinanceTracker({
               <tbody>
                 {displayedMovements.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-muted">
+                    <td colSpan={8} className="py-6 text-center text-muted">
                       No hay movimientos para los filtros seleccionados.
                     </td>
                   </tr>
@@ -654,6 +729,40 @@ export function FinanceTracker({
                       movement.isHighlighted ? "bg-amber-50" : ""
                     }`}
                   >
+                    <td className="py-3 pr-2 text-center align-middle">
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleHighlighted(movement)}
+                        aria-label={
+                          movement.isHighlighted
+                            ? "Quitar destacado"
+                            : "Marcar como destacado"
+                        }
+                        title={movement.isHighlighted ? "Quitar destacado" : "Destacar"}
+                        className={`rounded-md p-1 border ${
+                          movement.isHighlighted
+                            ? "border-amber-300 text-amber-800 bg-amber-100"
+                            : "border-zinc-300 hover:bg-background"
+                        }`}
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          viewBox="0 0 24 24"
+                          fill={movement.isHighlighted ? "currentColor" : "none"}
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path
+                            d="M12 3l2.9 5.88 6.49.95-4.7 4.58 1.11 6.47L12 17.77 6.2 20.88l1.11-6.47-4.7-4.58 6.49-.95L12 3z"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span className="sr-only">
+                          {movement.isHighlighted ? "Quitar destacado" : "Destacar"}
+                        </span>
+                      </button>
+                    </td>
                     <td className="py-3 pr-3 whitespace-nowrap">{movement.date}</td>
                     <td className="py-3 pr-3">
                       <span
@@ -704,27 +813,66 @@ export function FinanceTracker({
                         <button
                           type="button"
                           onClick={() => handleEdit(movement)}
-                          className="rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-background"
+                          aria-label="Editar movimiento"
+                          title="Editar"
+                          className="rounded-md border border-zinc-300 p-1.5 hover:bg-background"
                         >
-                          Editar
+                          <svg
+                            className="h-4 w-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path
+                              d="M12 20h9"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <span className="sr-only">Editar</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(movement.id)}
-                          className="rounded-md border border-red-300 text-red-700 px-2 py-1 text-xs hover:bg-red-50"
+                          aria-label="Eliminar movimiento"
+                          title="Eliminar"
+                          className="rounded-md border border-red-300 text-red-700 p-1.5 hover:bg-red-50"
                         >
-                          Eliminar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleToggleHighlighted(movement)}
-                          className={`rounded-md px-2 py-1 text-xs border ${
-                            movement.isHighlighted
-                              ? "border-amber-300 text-amber-800 bg-amber-100"
-                              : "border-zinc-300 hover:bg-background"
-                          }`}
-                        >
-                          {movement.isHighlighted ? "Quitar" : "Destacar"}
+                          <svg
+                            className="h-4 w-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path
+                              d="M3 6h18"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M8 6V4h8v2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M19 6l-1 14H6L5 6"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M10 11v6M14 11v6"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <span className="sr-only">Eliminar</span>
                         </button>
                       </div>
                     </td>
