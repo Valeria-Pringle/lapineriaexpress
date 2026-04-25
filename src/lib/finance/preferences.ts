@@ -10,14 +10,6 @@ export interface FinancePreferences {
   accounts: string[];
 }
 
-const defaultPreferences: FinancePreferences = {
-  categories: [
-    { name: "Comida", color: "#f59e0b" },
-    { name: "Transporte", color: "#3b82f6" },
-    { name: "Salario", color: "#10b981" },
-  ],
-  accounts: ["Efectivo", "Banco", "Tarjeta"],
-};
 
 export interface FinancePreferencesRepository {
   get(): Promise<FinancePreferences>;
@@ -106,8 +98,8 @@ export class SupabaseFinancePreferencesRepository
     const accounts = normalize(((accountsData || []) as AccountRow[]).map((row) => row.name));
 
     return {
-      categories: categories.length > 0 ? categories : defaultPreferences.categories,
-      accounts: accounts.length > 0 ? accounts : defaultPreferences.accounts,
+      categories,
+      accounts,
     };
   }
 
@@ -162,19 +154,6 @@ export class SupabaseFinancePreferencesRepository
       throw new Error(error.message);
     }
 
-    const current = await this.get();
-    if (current.categories.length > 0) {
-      return current;
-    }
-
-    const { error: seedError } = await supabase
-      .from("categories")
-      .insert(defaultPreferences.categories);
-
-    if (seedError) {
-      throw new Error(seedError.message);
-    }
-
     return this.get();
   }
 
@@ -218,20 +197,6 @@ export class SupabaseFinancePreferencesRepository
 
     if (error) {
       throw new Error(error.message);
-    }
-
-    const current = await this.get();
-    if (current.accounts.length > 0) {
-      return current;
-    }
-
-    const defaults = defaultPreferences.accounts.map((account) => ({ name: account }));
-    const { error: seedError } = await supabase
-      .from("accounts")
-      .insert(defaults);
-
-    if (seedError) {
-      throw new Error(seedError.message);
     }
 
     return this.get();

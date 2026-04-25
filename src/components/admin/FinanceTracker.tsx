@@ -545,35 +545,6 @@ export function FinanceTracker({
             Mes actual. Ordenados por fecha, del mas reciente al mas antiguo.
           </p>
 
-          <div className="relative mb-3">
-            <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              placeholder="Buscar por nombre, categoría, cuenta o comentarios..."
-              className="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => { setSearchQuery(""); setCurrentPage(1); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
-                aria-label="Limpiar búsqueda"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
-          </div>
-
           <div className="mb-4 rounded-xl border border-zinc-200/80 bg-background">
             <button
               type="button"
@@ -695,6 +666,35 @@ export function FinanceTracker({
               </div>
             </div>
             </div>
+            )}
+          </div>
+
+          <div className="relative mb-3">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              placeholder="Buscar por nombre, categoría, cuenta o comentarios..."
+              className="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); setCurrentPage(1); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                aria-label="Limpiar búsqueda"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
             )}
           </div>
 
