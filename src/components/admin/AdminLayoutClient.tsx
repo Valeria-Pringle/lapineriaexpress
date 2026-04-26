@@ -11,6 +11,7 @@ interface AdminLayoutClientProps {
 }
 
 const mainNavigationItems = [
+  { href: "/admin/pedidos", label: "Pedidos" },
   { href: "/admin/cotizaciones", label: "Cotizaciones" },
   { href: "/admin/finanzas", label: "Finanzas" },
 ];
@@ -66,6 +67,7 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
   };
 
   const pageTitleByPath: Record<string, string> = {
+    "/admin/pedidos": "Pedidos",
     "/admin/cotizaciones": "Cotizaciones",
     "/admin/finanzas": "Finanzas",
     "/admin/finanzas/historico": "Finanzas / Historico",
@@ -121,6 +123,7 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
           <nav className="flex-1 p-2 space-y-1">
             {mainNavigationItems.map((item) => {
               const isFinanceSection = item.href === "/admin/finanzas";
+              const isPedidosSection = item.href === "/admin/pedidos";
               const isActive = isFinanceSection
                 ? pathname.startsWith("/admin/finanzas")
                 : pathname === item.href;
@@ -130,13 +133,19 @@ export function AdminLayoutClient({ children }: AdminLayoutClientProps) {
                   <Link
                     href={item.href}
                     title={isSidebarOpen ? undefined : item.label}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap overflow-hidden ${
+                    className={`flex items-center gap-3 rounded-lg transition-colors whitespace-nowrap overflow-hidden ${
+                      isPedidosSection
+                        ? "px-3 py-3 text-base font-semibold border border-primary/30 shadow-sm"
+                        : "px-3 py-2 text-sm font-medium"
+                    } ${
                       isActive
                         ? "bg-primary text-white"
-                        : "text-muted hover:bg-background hover:text-foreground"
+                        : isPedidosSection
+                          ? "bg-cyan-50 text-primary hover:bg-cyan-100"
+                          : "text-muted hover:bg-background hover:text-foreground"
                     }`}
                   >
-                    <span className="shrink-0 w-5 text-center font-bold">
+                    <span className={`shrink-0 text-center font-bold ${isPedidosSection ? "w-6" : "w-5"}`}>
                       {item.label.charAt(0)}
                     </span>
                     <span
