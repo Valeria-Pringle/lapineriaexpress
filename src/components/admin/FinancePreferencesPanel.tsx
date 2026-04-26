@@ -6,6 +6,7 @@ import {
   type FinancePreferences,
   type FinancePreferencesRepository,
 } from "@/lib/finance/preferences";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface FinancePreferencesPanelProps {
   repository?: FinancePreferencesRepository;
@@ -34,6 +35,11 @@ export function FinancePreferencesPanel({
   const [categoryColor, setCategoryColor] = useState("#4BD3D6");
   const [accountInput, setAccountInput] = useState("");
   const [error, setError] = useState("");
+
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const askConfirm = (message: string, action: () => void) => { setConfirmMessage(message); setPendingAction(() => action); };
+  const dismissConfirm = () => { setPendingAction(null); setConfirmMessage(""); };
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -281,6 +287,14 @@ export function FinancePreferencesPanel({
           </article>
         </div>
       </section>
+
+      {pendingAction && (
+        <ConfirmModal
+          message={confirmMessage}
+          onConfirm={() => { pendingAction(); dismissConfirm(); }}
+          onCancel={dismissConfirm}
+        />
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   type MovementInput,
   type MovementSummary,
 } from "@/lib/finance/types";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface FinanceTrackerProps {
   repository?: FinanceRepository;
@@ -102,6 +103,11 @@ export function FinanceTracker({
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState("");
+
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const askConfirm = (message: string, action: () => void) => { setConfirmMessage(message); setPendingAction(() => action); };
+  const dismissConfirm = () => { setPendingAction(null); setConfirmMessage(""); };
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
@@ -330,26 +336,18 @@ export function FinanceTracker({
   };
 
   const handleDelete = async (id: string) => {
-    const shouldDelete = window.confirm(
-      "Esta seguro de eliminar este movimiento?"
-    );
-    if (!shouldDelete) return;
-
-    try {
-      await repository.remove(id);
-      await refreshMovements();
-      setCurrentPage(1);
-
-      if (editingId === id) {
-        resetForm();
-      }
-    } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "No se pudo eliminar el movimiento."
-      );
-    }
+    askConfirm("Eliminar este movimiento? Esta accion no se puede deshacer.", () => {
+      void (async () => {
+        try {
+          await repository.remove(id);
+          await refreshMovements();
+          setCurrentPage(1);
+          if (editingId === id) resetForm();
+        } catch (deleteError) {
+          setError(deleteError instanceof Error ? deleteError.message : "No se pudo eliminar el movimiento.");
+        }
+      })();
+    });
   };
 
   const handleToggleHighlighted = async (movement: FinanceMovement) => {
@@ -918,6 +916,14 @@ export function FinanceTracker({
           </div>
         </div>
       </section>
+
+      {pendingAction && (
+        <ConfirmModal
+          message={confirmMessage}
+          onConfirm={() => { pendingAction(); dismissConfirm(); }}
+          onCancel={dismissConfirm}
+        />
+      )}
     </div>
   );
 }

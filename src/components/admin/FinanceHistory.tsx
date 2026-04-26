@@ -16,6 +16,7 @@ import {
   type MovementInput,
   type MovementSummary,
 } from "@/lib/finance/types";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface FinanceHistoryProps {
   repository?: FinanceRepository;
@@ -253,6 +254,11 @@ export function FinanceHistory({
   const [editForm, setEditForm] = useState<MovementInput>(defaultEditForm);
   const [savingEdit, setSavingEdit] = useState(false);
   const [error, setError] = useState("");
+
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const askConfirm = (message: string, action: () => void) => { setConfirmMessage(message); setPendingAction(() => action); };
+  const dismissConfirm = () => { setPendingAction(null); setConfirmMessage(""); };
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -420,26 +426,19 @@ export function FinanceHistory({
   };
 
   const deleteMovement = async (id: string) => {
-    const shouldDelete = window.confirm(
-      "Esta seguro de eliminar este movimiento historico?"
-    );
-    if (!shouldDelete) return;
-
-    try {
-      await repository.remove(id);
-      await refreshMovements();
-      setCurrentPage(1);
-      if (editingMovementId === id) {
-        cancelEdit();
-      }
-      setError("");
-    } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "No se pudo eliminar el movimiento."
-      );
-    }
+    askConfirm("Eliminar este movimiento historico? Esta accion no se puede deshacer.", () => {
+      void (async () => {
+        try {
+          await repository.remove(id);
+          await refreshMovements();
+          setCurrentPage(1);
+          if (editingMovementId === id) cancelEdit();
+          setError("");
+        } catch (deleteError) {
+          setError(deleteError instanceof Error ? deleteError.message : "No se pudo eliminar el movimiento.");
+        }
+      })();
+    });
   };
 
   if (loading) {
@@ -451,6 +450,7 @@ export function FinanceHistory({
   }
 
   return (
+    <div>
     <section className="bg-white border border-zinc-200/80 rounded-xl p-5 shadow-sm space-y-5">
       {error && (
         <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
@@ -854,5 +854,14 @@ export function FinanceHistory({
         </div>
       </div>
     </section>
+
+      {pendingAction && (
+        <ConfirmModal
+          message={confirmMessage}
+          onConfirm={() => { pendingAction!(); dismissConfirm(); }}
+          onCancel={dismissConfirm}
+        />
+      )}
+    </div>
   );
 }
