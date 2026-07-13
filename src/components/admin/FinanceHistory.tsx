@@ -17,6 +17,39 @@ import {
   type MovementSummary,
 } from "@/lib/finance/types";
 import { ConfirmModal } from "./ConfirmModal";
+import { ordersRepository } from "@/lib/orders/storage";
+
+async function syncFinanceEditToOrder(financeMovementId: string, updated: MovementInput) {
+  try {
+    const allOrders = await ordersRepository.getAll();
+    for (const order of allOrders) {
+      const idx = order.payments.findIndex((p) => p.financeMovementId === financeMovementId);
+      if (idx === -1) continue;
+      const updatedPayments = order.payments.map((p, i) =>
+        i === idx ? { ...p, amount: updated.amount, date: updated.date, account: updated.account } : p
+      );
+      await ordersRepository.update({ ...order, payments: updatedPayments });
+      break;
+    }
+  } catch {
+    // Best-effort
+  }
+}
+
+async function removeFinanceMovementFromOrder(financeMovementId: string) {
+  try {
+    const allOrders = await ordersRepository.getAll();
+    for (const order of allOrders) {
+      const idx = order.payments.findIndex((p) => p.financeMovementId === financeMovementId);
+      if (idx === -1) continue;
+      const updatedPayments = order.payments.filter((_, i) => i !== idx);
+      await ordersRepository.update({ ...order, payments: updatedPayments });
+      break;
+    }
+  } catch {
+    // Best-effort
+  }
+}
 
 interface FinanceHistoryProps {
   repository?: FinanceRepository;
@@ -411,6 +444,7 @@ export function FinanceHistory({
     setSavingEdit(true);
     try {
       await repository.update(editingMovementId, editForm);
+      void syncFinanceEditToOrder(editingMovementId, editForm);
       await refreshMovements();
       cancelEdit();
       setError("");
@@ -430,6 +464,7 @@ export function FinanceHistory({
       void (async () => {
         try {
           await repository.remove(id);
+          void removeFinanceMovementFromOrder(id);
           await refreshMovements();
           setCurrentPage(1);
           if (editingMovementId === id) cancelEdit();

@@ -17,6 +17,47 @@ import {
   type MovementSummary,
 } from "@/lib/finance/types";
 import { ConfirmModal } from "./ConfirmModal";
+import { ordersRepository } from "@/lib/orders/storage";
+
+async function syncFinanceEditToOrder(financeMovementId: string, updated: MovementInput) {
+  try {
+    const allOrders = await ordersRepository.getAll();
+    for (const order of allOrders) {
+      const paymentIndex = order.payments.findIndex(
+        (p) => p.financeMovementId === financeMovementId
+      );
+      if (paymentIndex === -1) continue;
+
+      const updatedPayments = order.payments.map((p, i) =>
+        i === paymentIndex
+          ? { ...p, amount: updated.amount, date: updated.date, account: updated.account }
+          : p
+      );
+      await ordersRepository.update({ ...order, payments: updatedPayments });
+      break;
+    }
+  } catch {
+    // Best-effort: don't surface this error to the user
+  }
+}
+
+async function removeFinanceMovementFromOrder(financeMovementId: string) {
+  try {
+    const allOrders = await ordersRepository.getAll();
+    for (const order of allOrders) {
+      const paymentIndex = order.payments.findIndex(
+        (p) => p.financeMovementId === financeMovementId
+      );
+      if (paymentIndex === -1) continue;
+
+      const updatedPayments = order.payments.filter((_, i) => i !== paymentIndex);
+      await ordersRepository.update({ ...order, payments: updatedPayments });
+      break;
+    }
+  } catch {
+    // Best-effort
+  }
+}
 
 interface FinanceTrackerProps {
   repository?: FinanceRepository;
@@ -301,6 +342,8 @@ export function FinanceTracker({
     try {
       if (editingId) {
         await repository.update(editingId, form);
+        // Sync back to the linked order payment if this movement belongs to one
+        void syncFinanceEditToOrder(editingId, form);
       } else {
         await repository.create(form);
       }
@@ -343,6 +386,7 @@ export function FinanceTracker({
           await refreshMovements();
           setCurrentPage(1);
           if (editingId === id) resetForm();
+          void removeFinanceMovementFromOrder(id);
         } catch (deleteError) {
           setError(deleteError instanceof Error ? deleteError.message : "No se pudo eliminar el movimiento.");
         }

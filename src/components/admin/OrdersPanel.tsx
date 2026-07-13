@@ -1,43 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PRODUCTS, getPriceForQuantity } from "@/lib/products";
 import { ConfirmModal } from "./ConfirmModal";
 import { financePreferencesRepository } from "@/lib/finance/preferences";
+import { financeRepository } from "@/lib/finance/storage";
+import type { MovementInput } from "@/lib/finance/types";
+import { ordersRepository } from "@/lib/orders/storage";
+import type { Order, OrderItem, OrderPayment } from "@/lib/orders/types";
 
-const generateId = () =>
-  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-
-interface OrderPayment {
-  id: string;
-  amount: number;
-  date: string;
-  notes?: string;
-  account?: string;
-}
-
-interface OrderItem {
-  id: string;
-  productId: string;
-  productName: string;
-  quantity: number;
-  unitPrice: number;
-}
-
-interface Order {
-  id: string;
-  clientName: string;
-  description: string;
-  items: OrderItem[];
-  totalAmount: number;
-  createdAt: string;
-  deliveryDate: string;
-  payments: OrderPayment[];
-  isHighlighted?: boolean;
-  isDelivered?: boolean;
-}
+const generateId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // RFC 4122 v4 UUID fallback (for non-secure contexts)
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+};
 
 interface OrderForm {
   clientName: string;
@@ -46,8 +27,6 @@ interface OrderForm {
   deliveryDate: string;
   initialAdvance: string;
 }
-
-const ORDERS_STORAGE_KEY = "lapineria-admin-orders-v1";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -71,8 +50,11 @@ const getPaidAmount = (order: Order) =>
 const getRemainingAmount = (order: Order) =>
   Math.max(order.totalAmount - getPaidAmount(order), 0);
 
+const PAYMENT_CATEGORY = "Pedidos";
+
 export function OrdersPanel() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const ordersRef = useRef<Order[]>([]);
   const [form, setForm] = useState<OrderForm>(emptyForm);
   const [selectedProductId, setSelectedProductId] = useState(PRODUCTS[0]?.id ?? "");
   const [quantityInput, setQuantityInput] = useState("1");
@@ -104,6 +86,7 @@ export function OrdersPanel() {
   const [formAdvanceAccount, setFormAdvanceAccount] = useState("");
   const [upcomingHighlights, setUpcomingHighlights] = useState<Set<string>>(new Set());
   const [ordersCollapsed, setOrdersCollapsed] = useState(false);
+  const [pendingDeliveryWarning, setPendingDeliveryWarning] = useState<string | null>(null);
   const [ordersSearch, setOrdersSearch] = useState("");
   const [ordersPaymentFilter, setOrdersPaymentFilter] = useState<"all" | "paid" | "pending">("all");
   const [ordersDeliveryFilter, setOrdersDeliveryFilter] = useState<"all" | "delivered" | "undelivered">("all");
@@ -117,40 +100,15 @@ export function OrdersPanel() {
   const [editCustomItemQty, setEditCustomItemQty] = useState("1");
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    if (!raw) return;
-
-    try {
-      const parsed = JSON.parse(raw) as Order[];
-      if (!Array.isArray(parsed)) return;
-
-      const normalized = parsed
-        .map((order) => {
-          const items = Array.isArray(order.items) ? order.items : [];
-          const totalAmount = Number.isFinite(order.totalAmount)
-            ? Number(order.totalAmount)
-            : items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-
-          return {
-            ...order,
-            items,
-            totalAmount,
-            payments: Array.isArray(order.payments) ? order.payments : [],
-          };
-        })
-        .filter((order) => order.id && order.clientName);
-
-      setOrders(normalized);
-    } catch {
-      // Ignore malformed local storage payloads.
-    }
+    ordersRepository.getAll().then((data) => setOrders(data)).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      setError(`No se pudieron cargar los pedidos: ${msg}`);
+      console.error("[OrdersPanel] getAll failed:", err);
+    });
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+    ordersRef.current = orders;
   }, [orders]);
 
   useEffect(() => {
@@ -238,6 +196,68 @@ export function OrdersPanel() {
     setOrderItems((current) => current.filter((item) => item.id !== itemId));
   };
 
+  const resolvePaymentAccount = (payment: OrderPayment) =>
+    payment.account?.trim() || accounts[0] || "General";
+
+  const toMovementInput = (order: Order, payment: OrderPayment): MovementInput => ({
+    type: "ingreso",
+    amount: payment.amount,
+    name: `Pedido - ${order.clientName}`,
+    comments: `${payment.notes || "Abono"}${order.description ? ` | ${order.description}` : ""}`,
+    date: payment.date,
+    category: PAYMENT_CATEGORY,
+    account: resolvePaymentAccount(payment),
+  });
+
+  const attachFinanceMovementId = (orderId: string, paymentId: string, movementId: string) => {
+    setOrders((current) =>
+      current.map((order) =>
+        order.id !== orderId
+          ? order
+          : {
+              ...order,
+              payments: order.payments.map((payment) =>
+                payment.id === paymentId
+                  ? { ...payment, financeMovementId: movementId }
+                  : payment
+              ),
+            }
+      )
+    );
+    const current = ordersRef.current.find((o) => o.id === orderId);
+    if (current) {
+      const updated: Order = {
+        ...current,
+        payments: current.payments.map((p) =>
+          p.id === paymentId ? { ...p, financeMovementId: movementId } : p
+        ),
+      };
+      void ordersRepository.update(updated).catch(() => {});
+    }
+  };
+
+  const syncPaymentMovementUpsert = async (order: Order, payment: OrderPayment) => {
+    const input = toMovementInput(order, payment);
+
+    try {
+      if (payment.financeMovementId) {
+        await financeRepository.update(payment.financeMovementId, input);
+        return;
+      }
+
+      const created = await financeRepository.create(input);
+      attachFinanceMovementId(order.id, payment.id, created.id);
+    } catch {
+      setError("No se pudo guardar el movimiento en Finanzas.");
+    }
+  };
+
+  const syncOrderPaymentsAfterEdit = async (order: Order) => {
+    for (const payment of order.payments) {
+      await syncPaymentMovementUpsert(order, payment);
+    }
+  };
+
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -300,43 +320,72 @@ export function OrdersPanel() {
       createdAt: form.createdAt,
       deliveryDate: form.deliveryDate,
       payments: initialPayment,
+      isHighlighted: false,
+      isDelivered: false,
     };
 
     setOrders((current) => [newOrder, ...current]);
+    void ordersRepository.create(newOrder).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      setError(`No se pudo guardar el pedido: ${msg}`);
+      console.error("[OrdersPanel] create failed:", err);
+    });
     setForm(emptyForm());
     setOrderItems([]);
     setQuantityInput("1");
     setSelectedProductId(PRODUCTS[0]?.id ?? "");
     setFormAdvanceAccount("");
+
+    for (const payment of initialPayment) {
+      void syncPaymentMovementUpsert(newOrder, payment);
+    }
   };
 
   const handleDeleteOrder = (orderId: string) => {
-    setOrders((current) => current.filter((order) => order.id !== orderId));
+    const order = ordersRef.current.find((o) => o.id === orderId);
+    setOrders((current) => current.filter((o) => o.id !== orderId));
     setAdvanceByOrder((current) => {
       const next = { ...current };
       delete next[orderId];
       return next;
     });
+    void ordersRepository.remove(orderId).catch(() => {});
+    if (order) {
+      for (const payment of order.payments) {
+        if (payment.financeMovementId) {
+          void financeRepository.remove(payment.financeMovementId).catch(() => {});
+        }
+      }
+    }
   };
 
   const handleLiquidateOrder = (orderId: string) => {
+    const order = orders.find((currentOrder) => currentOrder.id === orderId);
+    if (!order) return;
+
+    const remaining = getRemainingAmount(order);
+    if (remaining <= 0) return;
+
+    const payment: OrderPayment = {
+      id: generateId(),
+      amount: remaining,
+      date: todayISO(),
+      notes: "Liquidacion total",
+    };
+
+    const updatedOrder: Order = { ...order, payments: [...order.payments, payment] };
     setOrders((current) =>
-      current.map((order) => {
-        if (order.id !== orderId) return order;
-        const remaining = getRemainingAmount(order);
-        if (remaining <= 0) return order;
-        const payment: OrderPayment = {
-          id: generateId(),
-          amount: remaining,
-          date: todayISO(),
-          notes: "Liquidacion total",
-        };
-        return { ...order, payments: [...order.payments, payment] };
-      })
+      current.map((o) => (o.id !== orderId ? o : updatedOrder))
     );
+
+    void ordersRepository.update(updatedOrder).catch(() => {});
+    void syncPaymentMovementUpsert(updatedOrder, payment);
   };
 
   const handleAddAdvance = (orderId: string) => {
+    const order = orders.find((currentOrder) => currentOrder.id === orderId);
+    if (!order) return;
+
     const rawAmount = advanceByOrder[orderId] ?? "";
     const amount = Number.parseFloat(rawAmount);
 
@@ -347,28 +396,28 @@ export function OrdersPanel() {
 
     setError("");
 
+    const remaining = getRemainingAmount(order);
+    if (amount > remaining) {
+      setError("El anticipo no puede ser mayor al restante.");
+      return;
+    }
+
+    const payment: OrderPayment = {
+      id: generateId(),
+      amount,
+      date: todayISO(),
+    };
+
+    const updatedOrder: Order = { ...order, payments: [...order.payments, payment] };
+
     setOrders((current) =>
-      current.map((order) => {
-        if (order.id !== orderId) return order;
-
-        const remaining = getRemainingAmount(order);
-        if (amount > remaining) {
-          setError("El anticipo no puede ser mayor al restante.");
-          return order;
-        }
-
-        const payment: OrderPayment = {
-          id: generateId(),
-          amount,
-          date: todayISO(),
-        };
-
-        return {
-          ...order,
-          payments: [...order.payments, payment],
-        };
-      })
+      current.map((currentOrder) =>
+        currentOrder.id !== orderId ? currentOrder : updatedOrder
+      )
     );
+
+    void ordersRepository.update(updatedOrder).catch(() => {});
+    void syncPaymentMovementUpsert(updatedOrder, payment);
 
     setAdvanceByOrder((current) => ({
       ...current,
@@ -435,14 +484,32 @@ export function OrdersPanel() {
   const removeEditItem = (itemId: string) => setEditItems((c) => c.filter((i) => i.id !== itemId));
 
   const handleDeletePayment = (paymentId: string) => {
+    const order = selectedOrder;
+    const payment = order?.payments.find((p) => p.id === paymentId);
+
     askConfirm("Eliminar este abono del historial?", () => {
-      setOrders((current) =>
-        current.map((o) =>
-          o.id === selectedOrderId
-            ? { ...o, payments: o.payments.filter((p) => p.id !== paymentId) }
-            : o
-        )
-      );
+      void (async () => {
+        if (payment?.financeMovementId) {
+          try {
+            await financeRepository.remove(payment.financeMovementId);
+          } catch {
+            setModalError("No se pudo eliminar el movimiento en Finanzas.");
+            return;
+          }
+        }
+
+        const orderToUpdate = ordersRef.current.find((o) => o.id === selectedOrderId);
+        if (orderToUpdate) {
+          const updatedOrder: Order = {
+            ...orderToUpdate,
+            payments: orderToUpdate.payments.filter((p) => p.id !== paymentId),
+          };
+          setOrders((current) =>
+            current.map((o) => (o.id === selectedOrderId ? updatedOrder : o))
+          );
+          void ordersRepository.update(updatedOrder).catch(() => {});
+        }
+      })();
     });
   };
 
@@ -460,6 +527,19 @@ export function OrdersPanel() {
       return;
     }
     const newTotal = editItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const currentOrder = orders.find((order) => order.id === selectedOrderId);
+    const editedOrder = currentOrder
+      ? {
+          ...currentOrder,
+          clientName: editForm.clientName.trim(),
+          description: editForm.description.trim(),
+          createdAt: editForm.createdAt,
+          deliveryDate: editForm.deliveryDate,
+          items: editItems,
+          totalAmount: newTotal,
+        }
+      : null;
+
     setOrders((current) =>
       current.map((o) =>
         o.id === selectedOrderId
@@ -475,53 +555,75 @@ export function OrdersPanel() {
           : o
       )
     );
+
+    if (editedOrder) {
+      void ordersRepository.update(editedOrder).catch(() => {});
+      void syncOrderPaymentsAfterEdit(editedOrder);
+    }
+
     setModalMode("detail");
     setModalError("");
   };
 
   const handleModalAdvance = () => {
+    const order = selectedOrder;
+    if (!order) return;
+
     const amount = Number.parseFloat(modalAdvance);
     if (!Number.isFinite(amount) || amount <= 0) {
       setModalError("Ingresa un monto valido mayor a 0.");
       return;
     }
+
+    const remaining = getRemainingAmount(order);
+    if (amount > remaining) {
+      setModalError("El abono no puede ser mayor al restante.");
+      return;
+    }
+
+    const payment: OrderPayment = {
+      id: generateId(),
+      amount,
+      date: todayISO(),
+      ...(modalAdvanceAccount ? { account: modalAdvanceAccount } : {}),
+    };
+
+    const updatedOrderAdv: Order = { ...order, payments: [...order.payments, payment] };
     setOrders((current) =>
-      current.map((o) => {
-        if (o.id !== selectedOrderId) return o;
-        const remaining = getRemainingAmount(o);
-        if (amount > remaining) {
-          setModalError("El abono no puede ser mayor al restante.");
-          return o;
-        }
-        return {
-          ...o,
-          payments: [
-            ...o.payments,
-            { id: generateId(), amount, date: todayISO(), ...(modalAdvanceAccount ? { account: modalAdvanceAccount } : {}) },
-          ],
-        };
-      })
+      current.map((o) => (o.id !== selectedOrderId ? o : updatedOrderAdv))
     );
+
+    void ordersRepository.update(updatedOrderAdv).catch(() => {});
+    void syncPaymentMovementUpsert(updatedOrderAdv, payment);
+
     setModalAdvance("");
     setModalAdvanceAccount("");
     setModalError("");
   };
 
   const handleModalLiquidate = () => {
+    const order = selectedOrder;
+    if (!order) return;
+
+    const remaining = getRemainingAmount(order);
+    if (remaining <= 0) return;
+
+    const payment: OrderPayment = {
+      id: generateId(),
+      amount: remaining,
+      date: todayISO(),
+      notes: "Liquidacion total",
+      ...(modalAdvanceAccount ? { account: modalAdvanceAccount } : {}),
+    };
+
+    const updatedOrderLiq: Order = { ...order, payments: [...order.payments, payment] };
     setOrders((current) =>
-      current.map((o) => {
-        if (o.id !== selectedOrderId) return o;
-        const remaining = getRemainingAmount(o);
-        if (remaining <= 0) return o;
-        return {
-          ...o,
-          payments: [
-            ...o.payments,
-            { id: generateId(), amount: remaining, date: todayISO(), notes: "Liquidacion total", ...(modalAdvanceAccount ? { account: modalAdvanceAccount } : {}) },
-          ],
-        };
-      })
+      current.map((o) => (o.id !== selectedOrderId ? o : updatedOrderLiq))
     );
+
+    void ordersRepository.update(updatedOrderLiq).catch(() => {});
+    void syncPaymentMovementUpsert(updatedOrderLiq, payment);
+
     setModalError("");
   };
 
@@ -534,11 +636,13 @@ export function OrdersPanel() {
   };
 
   const handleToggleHighlight = (orderId: string) => {
+    const newHighlighted = !ordersRef.current.find((o) => o.id === orderId)?.isHighlighted;
     setOrders((current) =>
       current.map((o) =>
-        o.id === orderId ? { ...o, isHighlighted: !o.isHighlighted } : o
+        o.id === orderId ? { ...o, isHighlighted: newHighlighted } : o
       )
     );
+    void ordersRepository.setHighlighted(orderId, newHighlighted).catch(() => {});
   };
 
   const handleToggleUpcomingHighlight = (orderId: string) => {
@@ -550,11 +654,22 @@ export function OrdersPanel() {
   };
 
   const handleToggleDelivered = (orderId: string) => {
+    const order = ordersRef.current.find((o) => o.id === orderId);
+    if (!order) return;
+    // If trying to mark as delivered but not fully paid, block
+    if (!order.isDelivered && getRemainingAmount(order) > 0) {
+      setPendingDeliveryWarning(
+        `Falta pagar ${currency.format(getRemainingAmount(order))} para poder marcar este pedido como entregado.`
+      );
+      return;
+    }
+    const newDelivered = !order.isDelivered;
     setOrders((current) =>
       current.map((o) =>
-        o.id === orderId ? { ...o, isDelivered: !o.isDelivered } : o
+        o.id === orderId ? { ...o, isDelivered: newDelivered } : o
       )
     );
+    void ordersRepository.setDelivered(orderId, newDelivered).catch(() => {});
   };
 
   const handleModalDeliveredAction = (order: Order) => {
@@ -562,11 +677,13 @@ export function OrdersPanel() {
       handleToggleDelivered(order.id);
       return;
     }
-    setOrders((current) =>
-      current.map((o) =>
-        o.id === order.id ? { ...o, isDelivered: true } : o
-      )
-    );
+    if (getRemainingAmount(order) > 0) {
+      setPendingDeliveryWarning(
+        `Falta pagar ${currency.format(getRemainingAmount(order))} para poder marcar este pedido como entregado.`
+      );
+      return;
+    }
+    handleToggleDelivered(order.id);
     closeModal();
   };
 
@@ -1520,6 +1637,31 @@ export function OrdersPanel() {
           onConfirm={() => { pendingAction(); dismissConfirm(); }}
           onCancel={dismissConfirm}
         />
+      )}
+
+      {pendingDeliveryWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg className="h-5 w-5 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <h3 className="text-base font-bold text-foreground">Pago pendiente</h3>
+            </div>
+            <p className="text-sm text-muted">{pendingDeliveryWarning}</p>
+            <button
+              type="button"
+              onClick={() => setPendingDeliveryWarning(null)}
+              className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-2 px-4 rounded-lg transition text-sm"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
